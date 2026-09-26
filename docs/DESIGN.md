@@ -9,7 +9,7 @@ Decisions below come from the owner interview on 2026-09-26.
 |---|---|
 | Users | Bashir + wife, **fully shared** household: both see everything, either can confirm. Accounts reuse the shared PocketBase `users` (register → admin approves); access to this app is a separate membership list. |
 | Method | **Envelope, zero-based.** Each category is a wallet. At payday all income is assigned to wallets. The AI advisor proposes amounts; the owners decide. |
-| Budget month | **25th → 24th** (payday). |
+| Budget month | **Configurable start day** (default 25 → month runs 25th → 24th). Settings → Budget cycle. Days 29–31 fall back to the month's last day in short months. Changing it keeps past months as they were, moves the current month's end to the day before the new start day (with a preview to confirm), and later months follow the new day. |
 | Month end | Leftovers in every wallet **sweep to savings** (emergency fund first, then goals). Wallets start fresh. Overspending is shown as a negative that must be covered by moving money from another wallet. |
 | Income | Entered **manually**. |
 | Accounts | BCA, Mandiri (plus Cash). |
@@ -98,7 +98,7 @@ Rules: every `fin_` collection is readable/writable only by members (`@collectio
 
 - **Setup (once)**: family profile → AI proposes categories and groups → owners edit → add must-spend
   bills and goals.
-- **Each payday (25th)**:
+- **Each cycle start (payday, default 25th)**:
   1. The closing period's wallet leftovers sweep to savings (emergency fund until its target, then goals).
   2. A new period opens. Owners enter income.
   3. The advisor proposes wallet amounts (must-spend first, then savings, then needs/wants; uses the last
