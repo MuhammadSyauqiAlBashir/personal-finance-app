@@ -172,5 +172,5 @@ the personal inbox; they will arrive unlabelled, which is fine for building rule
 - ~~The dedicated Gmail address for bank emails~~ (done, see §9).
 - 2–3 real example emails of each type from BCA and Mandiri (numbers can be masked) for the parsers.
 - A Gemini API key from Google AI Studio — put on the server by the owner, never pasted in chat.
-- The Google account for Drive (one-time sign-in to allow `drive.file` access).
-- Wife registers in the app; the admin approves her and adds her as a member.
+- ~~The Google account for Drive~~: `personalfinancemanagementsera@gmail.com` (one-time sign-in at the end).
+- ~~Wife's account~~: `bells` (already approved); add her as a member.
