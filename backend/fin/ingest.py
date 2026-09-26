@@ -16,6 +16,7 @@ import time
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from . import config
@@ -41,6 +42,13 @@ class Message(BaseModel):
 
 class Batch(BaseModel):
     messages: list[Message] = Field(max_length=50)
+
+
+def verify_request(request: Request, body: bytes):
+    """POST: sign "timestamp.body". GET: sign "timestamp.GET /path?query"."""
+    payload = body if request.method == "POST" else \
+        f"GET {request.url.path}{'?' + request.url.query if request.url.query else ''}".encode()
+    verify(request.headers.get("x-fin-timestamp", ""), request.headers.get("x-fin-signature", ""), payload)
 
 
 def verify(timestamp: str, signature: str, body: bytes):
@@ -74,7 +82,7 @@ async def ingest(request: Request, background: BackgroundTasks):
     body = await request.body()
     if len(body) > MAX_BODY:
         raise HTTPException(413, "Too large.")
-    verify(request.headers.get("x-fin-timestamp", ""), request.headers.get("x-fin-signature", ""), body)
+    verify_request(request, body)
     try:
         batch = Batch.model_validate(json.loads(body))
     except (ValueError, TypeError) as e:
@@ -109,3 +117,61 @@ async def ingest(request: Request, background: BackgroundTasks):
         from .emails import process_emails  # noqa: PLC0415 (avoid import cycle)
         background.add_task(process_emails, new_ids)
     return {"results": results}
+
+
+# ---------------------------------------------------------------------------
+# Receipts -> Google Drive, pulled by the same Apps Script (it runs as the
+# finance Gmail, which owns the Drive). No Drive credentials on the server.
+# ---------------------------------------------------------------------------
+
+def receipt_id(value: str) -> str:
+    import re as _re  # noqa: PLC0415
+    if not _re.fullmatch(r"[a-z0-9]{15}", value or ""):
+        raise HTTPException(404, "Not found.")
+    return value
+
+
+def receipt_filename(tx: dict, rec: dict) -> tuple[str, str]:
+    import re as _re  # noqa: PLC0415
+    from datetime import datetime as _dt  # noqa: PLC0415
+    from .config import TZ  # noqa: PLC0415
+    when = _dt.fromisoformat(tx["occurred_at"].replace(" ", "T").replace("Z", "+00:00")).astimezone(TZ)
+    merchant = _re.sub(r"[^A-Za-z0-9]+", "-", tx.get("merchant") or "receipt").strip("-")[:40] or "receipt"
+    ext = (rec.get("image") or "x.jpg").rsplit(".", 1)[-1].lower()
+    return when.strftime("%Y-%m"), f"{when:%Y-%m-%d}_{merchant}_{int(tx['amount'])}_{rec['id']}.{ext}"
+
+
+@router.get("/api/ingest/receipts")
+async def receipts_queue(request: Request):
+    verify_request(request, b"")
+    recs = (await pb.list("fin_receipts", filter="drive_state = 'pending' && transaction.status = 'confirmed'",
+                          sort="created", per_page=20, expand="transaction")).get("items", [])
+    items = []
+    for r in recs:
+        tx = (r.get("expand") or {}).get("transaction")
+        if not tx:
+            continue
+        month, name = receipt_filename(tx, r)
+        items.append({"id": r["id"], "folder": month, "filename": name})
+    return {"items": items}
+
+
+@router.get("/api/ingest/receipts/{rid}/image")
+async def receipts_image(rid: str, request: Request):
+    verify_request(request, b"")
+    rec = await pb.get("fin_receipts", receipt_id(rid))
+    data, ctype = await pb.file_bytes("fin_receipts", rec["id"], rec["image"])
+    return Response(data, media_type=ctype)
+
+
+class DriveDone(BaseModel):
+    drive_file_id: str = Field(min_length=5, max_length=200, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+@router.post("/api/ingest/receipts/{rid}/done")
+async def receipts_done(rid: str, request: Request):
+    body = await request.body()
+    verify_request(request, body)
+    done = DriveDone.model_validate(json.loads(body))
+    await pb.update("fin_receipts", receipt_id(rid), {"drive_file_id": done.drive_file_id, "drive_state": "uploaded"})
+    return {"ok": True}

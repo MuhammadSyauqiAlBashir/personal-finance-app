@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections import defaultdict, deque
@@ -12,22 +13,28 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import ingest
+from . import budget, emails, ingest, routes_budget, routes_tx
 from .pb import PBError, pb
 from .security import COOKIE, User, clear_session, client_ip, forget_token, set_cookie, signed_in
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)  # request URLs contain filters
 log = logging.getLogger("fin")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Retry any emails that arrived while the backend was down or erroring.
+    task = asyncio.create_task(emails.process_pending())
     yield
+    task.cancel()
     await pb.close()
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.include_router(ingest.router)
+app.include_router(routes_budget.router)
+app.include_router(routes_tx.router)
 
 
 # ---------------------------------------------------------------------------
