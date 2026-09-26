@@ -1,0 +1,27 @@
+# Financial Management: static PWA + /api -> FastAPI on 127.0.0.1:8100
+financial-management.bashir.my.id {
+	import security
+	encode zstd gzip
+
+	header {
+		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(), usb=(), publickey-credentials-get=(self), publickey-credentials-create=(self)"
+		Cross-Origin-Resource-Policy "same-origin"
+	}
+
+	handle /api/* {
+		request_body {
+			max_size 20MB
+		}
+		reverse_proxy 127.0.0.1:8100
+	}
+
+	handle {
+		root * /srv/finance
+		@icons path /icons/*
+		@notIcons not path /icons/*
+		header @icons Cache-Control "public, max-age=604800"
+		header @notIcons Cache-Control "no-cache"
+		file_server
+	}
+}
