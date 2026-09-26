@@ -23,6 +23,8 @@ Decisions below come from the owner interview on 2026-09-26.
 | Security | Normal login + **Face ID (passkey) lock** enforced by the server: after idle time the API refuses requests until a passkey check passes. |
 | Language | English. |
 | History | Start fresh. |
+| E-wallet top-ups | A top-up (GoPay, OVO, ShopeePay, DANA…) is **not** spending. It opens an e-wallet balance ("Rp200.000 to account for"). Each real purchase (GoFood order etc.) is added under it with its own receipt and category and counts on its own date. Fees become a small "Bank & admin fees" item. The balance closes at Rp0; unaccounted money counts toward the pending reminder. |
+| Wife's banks | Her bank emails are forwarded to the same finance inbox (her own runbook). The owner of each account is recognised from the name in the email. Transfers between any household accounts (own or spouse's) are internal and don't count. |
 
 ## 2. Architecture
 
