@@ -25,7 +25,7 @@ echo "==> web"
 STAGE="$(mktemp -d)"
 trap 'rm -rf -- "$STAGE"' EXIT
 cp -r web/. "$STAGE/"
-grep -rl __VERSION__ "$STAGE" | xargs -r sed -i "s/__VERSION__/$VERSION/g"
+{ grep -rl __VERSION__ "$STAGE" || true; } | xargs -r sed -i "s/__VERSION__/$VERSION/g"
 sudo install -d -o root -g root -m 755 /srv/finance
 sudo rsync -a --delete --chown=root:root --chmod=D755,F644 "$STAGE/" /srv/finance/
 
