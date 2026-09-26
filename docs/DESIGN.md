@@ -35,7 +35,7 @@ iPhone PWA ──HTTPS──▶ Caddy ──/api──▶ finance backend (FastA
                          └── static files /srv/finance                 │
                                                                        ├─▶ PocketBase (fin_* collections)
                                                                        ├─▶ Gemini API (extraction, advisor)
-                                                                       ├─▶ Google Drive (receipts, drive.file scope)
+                                                                       ├─▶ receipts → Google Drive via the Apps Script
                                                                        └─▶ Web Push (VAPID) to both phones
 ```
 
@@ -46,8 +46,10 @@ iPhone PWA ──HTTPS──▶ Caddy ──/api──▶ finance backend (FastA
 - One in-process scheduler handles reminders, reports and the payday rollover (Asia/Jakarta time).
 - Background jobs act through a dedicated PocketBase **service user** (`role = service`), not a superuser,
   so the backend can't touch lyrsync or other apps' data.
-- Secrets (Gemini key, Apps Script HMAC secret, Google OAuth refresh token, VAPID key) live in
-  `/etc/finance/env`, root-owned, readable only by the `finance` user (0640 root:finance).
+- Secrets (Gemini key, Apps Script HMAC secret, service login) live in `/etc/finance/env`, root-owned, readable
+  only by the `finance` user (0640 root:finance). The VAPID key is generated into `/var/lib/finance`.
+- Receipts reach Google Drive through the same Apps Script (it runs as the finance inbox, which owns the Drive):
+  it lists confirmed receipts, saves them, and reports the Drive file id back. No Google credentials on the server.
 
 ## 3. Data model (PocketBase, prefix `fin_`)
 
