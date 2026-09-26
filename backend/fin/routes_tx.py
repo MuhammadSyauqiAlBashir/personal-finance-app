@@ -193,7 +193,15 @@ async def store_receipt(tx: dict, data: bytes, mime: str, user: User) -> tuple[d
     rec = await pb.create("fin_receipts", {"transaction": tx["id"], "extracted": extracted, "match": match,
                                            "drive_state": "pending", "uploaded_by": user.username},
                           files={"image": (f"receipt.{ext}", data, mime)})
-    await pb.update("fin_transactions", tx["id"], {"receipt_state": "attached", "waive_reason": ""})
+    update: dict = {"receipt_state": "attached", "waive_reason": ""}
+    splits = extracted.get("splits") or []
+    # The receipt's items give a better category suggestion (and a split) than the bank text,
+    # as long as the receipt is for this amount.
+    if splits and match.get("amount") == "ok":
+        update["ai"] = {**(tx.get("ai") or {}), "splits": splits, "source": "receipt", "confidence": 0.85,
+                        "category": splits[0]["category_id"] if len(splits) == 1 else (tx.get("ai") or {}).get("category"),
+                        "reason": "From the receipt items.", "suggest_new": extracted.get("suggest_new")}
+    await pb.update("fin_transactions", tx["id"], update)
     return rec, extracted
 
 
@@ -205,13 +213,8 @@ async def upload_receipt(tid: str, file: UploadFile = File(...), user: User = De
     return {"receipt": {"id": rec["id"], "match": rec["match"]}, "extracted": extracted}
 
 
-@router.post("/transactions/{tid}/purchase")
-async def add_purchase(tid: str, file: UploadFile = File(...), user: User = Depends(member)):
-    """E-wallet: create a purchase under a top-up from its receipt photo."""
-    topup = await pb.get("fin_transactions", rid(tid))
-    if topup["kind"] != "topup":
-        raise HTTPException(400, "Not a top-up.")
-    data, mime = await read_image(file)
+async def create_from_receipt(data: bytes, mime: str, user: User, topup: dict | None = None) -> dict:
+    """A pending expense built from a receipt/screenshot photo (optionally under a top-up)."""
     try:
         extracted = await receipts.extract(data, mime)
     except ai.AIUnavailable:
@@ -227,27 +230,47 @@ async def add_purchase(tid: str, file: UploadFile = File(...), user: User = Depe
     period = await budget.period_for(when.date())
     splits = extracted.get("splits") or []
     flags = {} if amount else {"amount_check": "The AI couldn't read the total. Please enter it."}
-    remaining = (await enrich([topup]))[0]["remaining"]
-    if amount and amount > remaining:
-        flags["exceeds_topup"] = (f"This purchase is more than the top-up's remaining balance "
-                                  f"(Rp{remaining:,}). Was part of it paid another way?").replace(",", ".")
+    if topup:
+        remaining = (await enrich([topup]))[0]["remaining"]
+        if amount and amount > remaining:
+            flags["exceeds_topup"] = (f"This purchase is more than the top-up's remaining balance "
+                                      f"(Rp{remaining:,}). Was part of it paid another way?").replace(",", ".")
+    wallet = topup.get("wallet") if topup else ""
     child = await pb.create("fin_transactions", {
         "status": "pending", "kind": "expense", "amount": max(amount, 1), "occurred_at": when.isoformat(),
         "period": period["id"], "merchant": (extracted.get("merchant") or "")[:200],
-        "description": f"Paid with {topup.get('wallet') or 'e-wallet'}", "account": topup.get("wallet") or "E-wallet",
-        "source": "screenshot", "receipt_state": "missing", "flags": flags,
-        "created_by": user.username, "parent": topup["id"],
+        "description": f"Paid with {wallet or 'e-wallet'}" if topup else (extracted.get("payment_method") or "")[:200],
+        "account": (wallet or "E-wallet") if topup else (extracted.get("payment_method") or "")[:40],
+        "source": "screenshot", "receipt_state": "missing", "flags": flags, "created_by": user.username,
+        "parent": topup["id"] if topup else None,
         "ai": {"category": splits[0]["category_id"] if len(splits) == 1 else None,
                "confidence": 0.8 if splits else 0, "suggest_new": extracted.get("suggest_new"),
                "reason": "From the receipt.", "source": "receipt", "splits": splits},
     })
     ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}[mime]
     await pb.create("fin_receipts", {"transaction": child["id"], "extracted": extracted,
-                                     "match": {"overall": "match"}, "drive_state": "pending",
+                                     "match": {"overall": "match" if amount else "unknown"}, "drive_state": "pending",
                                      "uploaded_by": user.username},
                     files={"image": (f"receipt.{ext}", data, mime)})
     child = await pb.update("fin_transactions", child["id"], {"receipt_state": "attached"})
     return {"transaction": (await enrich([child]))[0], "extracted": extracted}
+
+
+@router.post("/transactions/from-receipt")
+async def from_receipt(file: UploadFile = File(...), user: User = Depends(member)):
+    """A payment with no bank email (cash, some QRIS/e-wallet): start from its photo."""
+    data, mime = await read_image(file)
+    return await create_from_receipt(data, mime, user)
+
+
+@router.post("/transactions/{tid}/purchase")
+async def add_purchase(tid: str, file: UploadFile = File(...), user: User = Depends(member)):
+    """E-wallet: create a purchase under a top-up from its receipt photo."""
+    topup = await pb.get("fin_transactions", rid(tid))
+    if topup["kind"] != "topup":
+        raise HTTPException(400, "Not a top-up.")
+    data, mime = await read_image(file)
+    return await create_from_receipt(data, mime, user, topup)
 
 
 @router.get("/receipts/{rcid}/image")
