@@ -109,8 +109,13 @@ async def create_from_parsed(p: Parsed, email_id: str, flags: dict) -> dict:
         merchant = f"Own account ({detail})" if detail else "Own account"
     if dup := await possible_duplicate(p):
         flags["possible_duplicate_of"] = dup
+    # Before the household's tracking start date (clean start), record but ignore.
+    start = await pb.kv_get("tracking_start", "")
+    before_start = bool(start) and when.astimezone(budget.config.TZ).date().isoformat() < start
+    if before_start:
+        flags["before_tracking_start"] = start
     base = {
-        "status": "failed" if p.status == "failed" else "pending",
+        "status": "failed" if p.status == "failed" else "ignored" if before_start else "pending",
         "amount": p.amount - (p.fee if kind in ("topup", "transfer") else 0),
         "occurred_at": when.isoformat(), "period": period["id"], "merchant": merchant[:200],
         "description": p.description, "account": p.account, "source": "email", "email": email_id,

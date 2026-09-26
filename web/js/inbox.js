@@ -76,6 +76,8 @@ export function txRow(tx, onclick) {
       else if (ai.suggest_new) pills.push(el("span", { class: "pill ai", text: `New: ${ai.suggest_new.name}` }))
     }
     if (tx.flags && (tx.flags.possible_duplicate_of || tx.flags.amount_check || tx.flags.exceeds_topup)) pills.push(el("span", { class: "pill bad" }, icon("alert"), "Check"))
+  } else if (tx.status === "ignored" && tx.flags && tx.flags.before_tracking_start) {
+    pills.push(el("span", { class: "pill", text: `Before ${tx.flags.before_tracking_start}` }))
   } else if (tx.status === "confirmed" && tx.splits && tx.splits.length) {
     const names = tx.splits.map((s) => (catById(s.category) || {}).name).filter(Boolean)
     pills.push(el("span", { class: "pill", text: names.length > 1 ? `${names[0]} +${names.length - 1}` : names[0] || "" }))
