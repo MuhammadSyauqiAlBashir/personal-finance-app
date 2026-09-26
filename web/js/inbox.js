@@ -32,7 +32,7 @@ export async function renderInbox(page, arg) {
     el("div", { class: "topbar" }, el("div", {}, el("h1", { text: "Inbox" }),
       el("div", { class: "sub", text: "Bank emails, receipts and quick adds land here." }))),
     seg, listStatus !== "pending" ? el("div", { style: { marginTop: "10px" } }, searchBox) : null, listWrap)
-  document.body.append(el("button", { class: "fab", type: "button", "aria-label": "Add a transaction", onclick: () => quickAdd() }, icon("plus")))
+  page.append(el("button", { class: "fab", type: "button", "aria-label": "Add a transaction", onclick: () => quickAdd() }, icon("plus")))
 
   const data = await api(`/transactions?status=${listStatus}&search=${encodeURIComponent(listStatus === "pending" ? "" : search)}`)
   listWrap.replaceChildren()
@@ -84,7 +84,8 @@ export function txRow(tx, onclick) {
     el("div", { class: "li-icon", text: txIcon(tx) }),
     el("div", { class: "li-main" },
       el("div", { class: "li-title", text: tx.merchant || tx.description || "Transaction" }),
-      el("div", { class: "li-sub" }, el("span", { text: [tx.account, fmtTime(tx.occurred_at)].filter(Boolean).join(" · ") }), ...pills)),
+      el("div", { class: "li-sub" }, el("span", { text: [tx.account, fmtTime(tx.occurred_at)].filter(Boolean).join(" · ") })),
+      pills.length ? el("div", { class: "li-pills" }, ...pills) : null),
     el("div", { class: "li-right" }, el("div", { class: `li-amount${tx.kind === "transfer" ? " transfer" : ""}`, text: rp(tx.amount) })))
 }
 
@@ -184,7 +185,8 @@ async function txBody(tx, ctx) {
     el("dt", { text: "When" }), el("dd", { text: `${fmtDay(tx.occurred_at)}, ${fmtTime(tx.occurred_at)}` }),
     tx.account ? el("dt", { text: "Account" }) : null, tx.account ? el("dd", { text: tx.account }) : null,
     tx.description ? el("dt", { text: "Type" }) : null, tx.description ? el("dd", { text: tx.description }) : null,
-    tx.holder ? el("dt", { text: "Holder" }) : null, tx.holder ? el("dd", { text: tx.holder }) : null))
+    tx.holder && !tx.holder.includes("[owner]") ? el("dt", { text: "Holder" }) : null,
+    tx.holder && !tx.holder.includes("[owner]") ? el("dd", { text: tx.holder }) : null))
 
   // Flags
   const flags = tx.flags || {}

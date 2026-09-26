@@ -79,7 +79,7 @@ async def list_transactions(status: str = "pending", period: str = "", search: s
         filters.append(f"(merchant ~ {q(s)} || description ~ {q(s)} || note ~ {q(s)})")
     if status == "pending":
         # Top-up purchases show inside their top-up, not as separate items.
-        filters.append("(parent = '' || parent.kind != 'topup')")
+        filters = [f for f in filters if not f.startswith("status =")] + [budget.PENDING_FILTER]
     data = await pb.list("fin_transactions", filter=" && ".join(filters), sort="-occurred_at",
                          page=max(1, page), per_page=50, skip_total=False)
     return {"items": await enrich(data.get("items", [])), "page": data.get("page", 1),

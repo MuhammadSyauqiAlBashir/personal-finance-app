@@ -7,6 +7,17 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // ---------------------------------------------------------------------------
 // DOM
 // ---------------------------------------------------------------------------
+// Views build child lists with optional parts (`cond ? node : null`); make
+// append/replaceChildren skip those instead of printing "null".
+for (const proto of [Element.prototype, DocumentFragment.prototype]) {
+  for (const name of ["append", "replaceChildren"]) {
+    const orig = proto[name]
+    proto[name] = function (...nodes) {
+      return orig.apply(this, nodes.flat().filter((n) => n !== null && n !== undefined && n !== false))
+    }
+  }
+}
+
 // el("div", {class: "x", onclick: fn}, child, "text", ...). Text is always set
 // with textContent, never innerHTML, so data from emails can't inject markup.
 export function el(tag, props = {}, ...children) {
@@ -84,6 +95,8 @@ export function rpShort(n) {
   return `${sign}${Math.round(a)}`
 }
 export const pct = (n) => `${Math.round(n || 0)}%`
+// Full amount when short, compact (Rp24jt, Rp325rb) when it wouldn't fit a small tile.
+export const rpFit = (n, max = 8) => (rp(n).length <= max ? rp(n) : (n < 0 ? "−Rp" : "Rp") + rpShort(Math.abs(n)))
 
 export function parseDate(s) {
   if (!s) return null
@@ -197,7 +210,9 @@ export function sheet(title, { tall = false, onClose } = {}) {
   dialog.addEventListener("click", (e) => { if (e.target === dialog) close() })
   dialog.addEventListener("close", () => { dialog.remove(); onClose && onClose() })
   document.body.append(dialog)
+  dialog.setAttribute("tabindex", "-1")
   dialog.showModal()
+  dialog.focus() // not the close button (avoids a focus ring on open)
   return { dialog, body, close, setTitle: (t) => { $("h2", dialog).textContent = t } }
 }
 

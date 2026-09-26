@@ -63,10 +63,11 @@ async function monthly(body) {
   // Budget vs actual (meters, sorted by % used)
   const ws = d.wallets.filter((w) => (w.budget || w.spent) && w.category.group !== "savings").sort((a, b) => b.pct - a.pct)
   const budgetVsActual = figure("Budget vs actual", "Each wallet this month; the tick marks where spending should be by today",
-    el("div", {}, ws.map((w) => el("div", { style: { marginBottom: "12px" } },
-      el("div", { class: "row between small" }, el("span", {}, `${w.category.icon || ""} ${w.category.name}`),
-        el("span", { class: "num" }, `${rp(w.spent)} / ${rp(w.budget)}`, w.left < 0 ? el("span", { class: "pill bad", style: { marginLeft: "6px" } }, icon("alert"), "Over") : null)),
-      meter(w.spent, w.budget, { pace: d.days_total ? (d.days_total - d.days_left) / d.days_total : null })))),
+    el("div", {}, ws.map((w) => el("div", { class: "bva" },
+      el("div", { class: "bva-top" }, el("span", { class: "bva-name", text: `${w.category.icon || ""} ${w.category.name}` }),
+        el("span", { class: "bva-amt", text: `${rp(w.spent)} / ${rp(w.budget)}` })),
+      meter(w.spent, w.budget, { pace: d.days_total ? (d.days_total - d.days_left) / d.days_total : null }),
+      w.left < 0 ? el("div", { class: "bva-over" }, icon("alert"), w.budget ? `Over by ${rp(-w.left)}` : "No budget planned") : null))),
     table(["Wallet", "Budget", "Spent", "Left"], ws.map((w) => [w.category.name, rp(w.budget), rp(w.spent), rp(w.left)])))
 
   const byCat = d.wallets.filter((w) => w.spent > 0).sort((a, b) => b.spent - a.spent)

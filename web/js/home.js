@@ -1,4 +1,4 @@
-import { api, el, fmtDate, greeting, icon, markdown, rp, todayKey } from "./lib.js?v=__VERSION__"
+import { api, el, fmtDate, greeting, icon, markdown, rp, rpFit, todayKey } from "./lib.js?v=__VERSION__"
 import { meter, ring } from "./charts.js?v=__VERSION__"
 import { go, state } from "./app.js?v=__VERSION__"
 import { quickAdd } from "./inbox.js?v=__VERSION__"
@@ -17,16 +17,17 @@ export async function renderHome(page) {
   const hero = el("div", { class: "card glass hero" },
     el("div", { class: "grow" },
       el("div", { class: "hero-label", text: "Safe to spend today" }),
-      el("div", { class: "hero-value", text: rp(s.safe_today) }),
-      el("div", { class: "hero-sub", text: s.days_left ? `From your Needs & Wants wallets, spread over ${s.days_left} day${s.days_left === 1 ? "" : "s"}.` : "This budget month has ended." })),
+      el("div", { class: "hero-value", text: s.assigned ? rp(s.safe_today) : "—" }),
+      el("div", { class: "hero-sub", text: !s.assigned ? "Plan your wallets first. Then this shows what you can spend each day."
+        : s.days_left ? `From your Needs & Wants wallets, spread over ${s.days_left} day${s.days_left === 1 ? "" : "s"}.` : "This budget month has ended." })),
     el("div", { class: "ring-wrap" }, ring(fraction, `${elapsed} of ${s.days_total} days`),
       el("div", { class: "ring-text" }, el("span", {}, el("b", { text: String(s.days_left) }), "days left"))))
 
   const tiles = el("div", { class: "tiles" },
-    el("div", { class: "tile" }, el("div", { class: "tile-label", text: "Income" }), el("div", { class: "tile-value", text: rp(s.income) })),
-    el("div", { class: "tile" }, el("div", { class: "tile-label", text: "Spent" }), el("div", { class: "tile-value", text: rp(s.spent) })),
-    el("div", { class: `tile${s.to_assign ? " alert" : ""}` }, el("div", { class: "tile-label", text: s.to_assign < 0 ? "Over-assigned" : "To assign" }),
-      el("div", { class: "tile-value", text: rp(Math.abs(s.to_assign)) })))
+    el("div", { class: "tile", title: rp(s.income) }, el("div", { class: "tile-label", text: "Income" }), el("div", { class: "tile-value", text: rpFit(s.income) })),
+    el("div", { class: "tile", title: rp(s.spent) }, el("div", { class: "tile-label", text: "Spent" }), el("div", { class: "tile-value", text: rpFit(s.spent) })),
+    el("div", { class: `tile${s.to_assign ? " alert" : ""}`, title: rp(Math.abs(s.to_assign)) }, el("div", { class: "tile-label", text: s.to_assign < 0 ? "Over-assigned" : "To assign" }),
+      el("div", { class: "tile-value", text: rpFit(Math.abs(s.to_assign)) })))
 
   const alerts = []
   if (!s.income) {
@@ -40,7 +41,7 @@ export async function renderHome(page) {
     alerts.push(banner(s.pending >= 3 ? "warn" : "info", "inbox", `${s.pending} transaction${s.pending === 1 ? "" : "s"} to confirm`,
       "Check the category and attach the receipt.", () => go("inbox")))
   }
-  const over = s.wallets.filter((w) => w.left < 0 && w.category.group !== "savings")
+  const over = s.assigned ? s.wallets.filter((w) => w.left < 0 && w.category.group !== "savings") : []
   if (over.length) {
     alerts.push(banner("danger", "alert", `${over.length} wallet${over.length === 1 ? " is" : "s are"} overspent`,
       over.map((w) => w.category.name).join(", ") + ". Move money to cover it.", () => go("wallets")))
@@ -78,7 +79,7 @@ export async function renderHome(page) {
     el("div", { class: "section" }, note))
 
   const fab = el("button", { class: "fab", type: "button", "aria-label": "Add a transaction", onclick: () => quickAdd() }, icon("plus"))
-  document.body.append(fab)
+  page.append(fab)
 
   // Today's AI note (cached server-side per day), loaded after the page shows.
   api(`/reports/daily?note=1`).then((d) => {

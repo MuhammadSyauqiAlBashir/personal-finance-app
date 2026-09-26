@@ -13,6 +13,7 @@ export const state = { me: null, locked: false }
 // Views
 // ---------------------------------------------------------------------------
 function show(which) {
+  $("#splash").hidden = true
   for (const id of ["authView", "lockView", "setupView", "appView"]) $(`#${id}`).hidden = id !== which
 }
 
@@ -32,9 +33,12 @@ export async function route() {
   show("appView")
   const tab = name === "tx" || name === "pending" ? "inbox" : name === "report" ? "reports" : ROUTES[name] ? name : "home"
   for (const a of $$(".tabbar a")) a.classList.toggle("on", a.dataset.tab === tab)
-  const page = $("#page")
+  // Each navigation renders into its own fresh container. If an older, slower
+  // render finishes later it only fills its own (detached) container, so it can
+  // never overwrite the screen you're on now.
   const my = ++rendering
-  $$(".fab").forEach((f) => f.remove())
+  const page = el("div", { class: "view" })
+  $("#page").replaceChildren(page)
   try {
     await ROUTES[tab](page, name === "report" ? arg : name === "tx" ? null : arg, arg2)
     if (my !== rendering) return

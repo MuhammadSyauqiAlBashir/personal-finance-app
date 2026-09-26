@@ -107,7 +107,7 @@ async def new_transaction(tx: dict):
 
 async def pending_reminder(immediate: bool = False):
     """3+ transactions waiting: remind once when reached, then at most daily."""
-    data = await pb.list("fin_transactions", filter="status = 'pending'", per_page=1, skip_total=False)
+    data = await pb.list("fin_transactions", filter=budget.PENDING_FILTER, per_page=1, skip_total=False)
     n = data.get("totalItems", 0)
     if n < 3:
         return

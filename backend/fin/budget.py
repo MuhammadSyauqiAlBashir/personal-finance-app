@@ -16,6 +16,9 @@ from . import config
 from .pb import pb, q
 
 GROUPS = ("must", "needs", "wants", "savings")
+# What the Inbox shows as "to confirm": purchases inside an e-wallet top-up are
+# counted with their top-up, not separately.
+PENDING_FILTER = "status = 'pending' && (parent = '' || parent.kind != 'topup')"
 
 
 def today() -> date:
@@ -178,7 +181,7 @@ async def summary(period: dict) -> dict:
         g = by_group[w["category"]["group"]]
         g["budget"] += w["budget"]
         g["spent"] += w["spent"]
-    pending = await pb.list("fin_transactions", filter="status = 'pending'", per_page=1, skip_total=False)
+    pending = await pb.list("fin_transactions", filter=PENDING_FILTER, per_page=1, skip_total=False)
     return {
         "period": {k: period[k] for k in ("id", "start", "end", "status")},
         "days_total": days_total, "days_left": days_left,
