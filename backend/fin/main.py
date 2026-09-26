@@ -13,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import budget, emails, ingest, routes_budget, routes_tx
+from . import emails, ingest, routes_budget, routes_more, routes_tx, scheduler
 from .pb import PBError, pb
 from .security import COOKIE, User, clear_session, client_ip, forget_token, set_cookie, signed_in
 
@@ -25,9 +25,10 @@ log = logging.getLogger("fin")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Retry any emails that arrived while the backend was down or erroring.
-    task = asyncio.create_task(emails.process_pending())
+    tasks = [asyncio.create_task(emails.process_pending()), asyncio.create_task(scheduler.run())]
     yield
-    task.cancel()
+    for t in tasks:
+        t.cancel()
     await pb.close()
 
 
@@ -35,6 +36,7 @@ app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
 app.include_router(ingest.router)
 app.include_router(routes_budget.router)
 app.include_router(routes_tx.router)
+app.include_router(routes_more.router)
 
 
 # ---------------------------------------------------------------------------

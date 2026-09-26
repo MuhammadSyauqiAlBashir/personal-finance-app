@@ -150,7 +150,8 @@ async def chat_context() -> str:
                         f"spent {rp(w['spent'])}, left {rp(w['left'])}" for w in s["wallets"])
     goals = "\n".join(f"- {g['name']}: {rp(g.get('saved') or 0)} / {rp(g.get('target') or 0)}"
                       for g in await pb.all("fin_goals", filter="archived = false")) or "(none)"
-    return (f"Today is in budget month {period['start']}..{period['end']} ({s['days_left']} days left).\n"
+    return (f"Today is {budget.today():%A %d %B %Y}. Budget month {period['start']}..{period['end']} "
+            f"({s['days_left']} days left including today).\n"
             f"Income {rp(s['income'])}, assigned {rp(s['assigned'])}, spent {rp(s['spent'])}, "
             f"safe to spend today {rp(s['safe_today'])}, pending confirmations {s['pending']}.\n"
             f"Wallets:\n{wallets}\nGoals:\n{goals}\nRecent months:\n{await history_lines(6) or '(none)'}\n"
