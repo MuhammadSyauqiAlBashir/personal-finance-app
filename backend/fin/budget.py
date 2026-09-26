@@ -51,6 +51,25 @@ def next_start_after(d: date, start_day: int) -> date:
     return clamp_day(y, m, start_day)
 
 
+async def demo_period_ids() -> set[str]:
+    """Budget months filled with demo data (preview only; ignored by the advisor,
+    notifications, learning and the savings sweep)."""
+    return set((await pb.kv_get("demo_periods", [])) or [])
+
+
+async def is_demo(period_id: str) -> bool:
+    return period_id in await demo_period_ids()
+
+
+async def real_period() -> dict:
+    """The current budget month, or the next real one while the current month is demo."""
+    p = await period_for()
+    demo = await demo_period_ids()
+    while p["id"] in demo:
+        p = await period_for(parse(p["end"]) + timedelta(days=1))
+    return p
+
+
 async def start_day() -> int:
     cfg = await pb.kv_get("cycle", {}) or {}
     day = int(cfg.get("start_day") or config.PAYDAY)
@@ -184,6 +203,7 @@ async def summary(period: dict) -> dict:
     pending = await pb.list("fin_transactions", filter=PENDING_FILTER, per_page=1, skip_total=False)
     return {
         "period": {k: period[k] for k in ("id", "start", "end", "status")},
+        "demo": await is_demo(pid),
         "days_total": days_total, "days_left": days_left,
         "income": income_total, "incomes": incomes, "assigned": assigned, "to_assign": income_total - assigned,
         "spent": sum(spent.values()), "wallets": wallets, "groups": by_group,
@@ -205,6 +225,10 @@ async def close_period(period: dict) -> dict:
     """
     if period.get("status") == "closed" and period.get("closing"):
         return period["closing"]
+    if await is_demo(period["id"]):
+        closing = {"demo": True, "swept": [], "closed_at": datetime.now(config.TZ).isoformat()}
+        await pb.update("fin_periods", period["id"], {"status": "closed", "closing": closing})
+        return closing
     s = await summary(period)
     leftovers = {w["category"]["id"]: w["left"] for w in s["wallets"] if w["category"]["group"] != "savings"}
     unassigned = max(0, s["to_assign"])

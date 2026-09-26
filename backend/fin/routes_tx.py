@@ -110,6 +110,7 @@ class TxIn(BaseModel):
     kind: str = Field(default="expense", pattern=r"^(expense|topup)$")
     wallet: str = Field(default="", max_length=40)
     parent: str = ""
+    category: str = ""  # optional: the wallet chosen when adding (pre-selected for confirming)
 
 
 @router.post("/transactions")
@@ -128,7 +129,10 @@ async def create_transaction(body: TxIn, user: User = Depends(member)):
         "receipt_state": "missing", "flags": {}, "created_by": user.username, "wallet": body.wallet,
         "parent": parent["id"] if parent else None,
     }
-    if body.kind == "expense":
+    if body.kind == "expense" and body.category:
+        rec["ai"] = {"category": rid(body.category), "confidence": 1, "suggest_new": None,
+                     "reason": "Chosen when adding.", "source": "you"}
+    elif body.kind == "expense":
         rec["ai"] = await categorize.suggest(body.merchant, body.description, body.amount)
     return await pb.create("fin_transactions", rec)
 
@@ -305,6 +309,7 @@ class SplitIn(BaseModel):
 class ConfirmIn(BaseModel):
     splits: list[SplitIn] = Field(default_factory=list, max_length=30)
     waive_reason: str = Field(default="", max_length=200)
+    note: str | None = Field(default=None, max_length=1000)
 
 
 async def check_bills(tx: dict, splits: list[SplitIn]):
@@ -330,6 +335,8 @@ async def confirm(tid: str, body: ConfirmIn, background: BackgroundTasks, user: 
     if tx["status"] not in ("pending",):
         raise HTTPException(400, "Only pending transactions can be confirmed.")
     update = {"status": "confirmed", "confirmed_by": user.username, "confirmed_at": now_iso()}
+    if body.note is not None:
+        update["note"] = body.note.strip()
 
     if tx["kind"] == "expense":
         if not body.splits:

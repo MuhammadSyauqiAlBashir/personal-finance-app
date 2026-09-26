@@ -73,6 +73,7 @@ async def daily(d: date) -> dict:
     flexible_today = sum(v for k, v in by_cat.items() if cats.get(k, {}).get("group") in ("needs", "wants"))
     biggest = sorted(rows, key=lambda r: -r["amount"])[:3]
     return {
+        "demo": s["demo"],
         "date": d.isoformat(), "period": s["period"], "total": total,
         "by_category": [{"category": cat_public(cats.get(k)), "amount": v}
                         for k, v in sorted(by_cat.items(), key=lambda kv: -kv[1])],
@@ -121,7 +122,15 @@ async def monthly(period: dict) -> dict:
     for state in tx_receipts.values():
         coverage[state if state in coverage else "missing"] += 1
 
+    notes = []
+    lo, hi = utc_bounds(start, end)
+    for t in await pb.all("fin_transactions", filter=f"status = 'confirmed' && note != '' && "
+                                                     f"occurred_at >= {q(lo)} && occurred_at < {q(hi)}",
+                          sort="-occurred_at", fields="id,occurred_at,merchant,amount,note"):
+        notes.append({"date": local_day(t["occurred_at"]).isoformat(), "merchant": t.get("merchant") or "",
+                      "amount": int(t["amount"]), "note": t["note"]})
     return {
+        "demo": s["demo"], "notes": notes[:50],
         "period": s["period"], "income": s["income"], "incomes": [
             {"source": i["source"], "amount": i["amount"], "date": i.get("date")} for i in s["incomes"]],
         "assigned": s["assigned"], "to_assign": s["to_assign"], "spent": s["spent"],
@@ -184,6 +193,7 @@ async def monthly_review(period: dict, refresh: bool = False) -> str:
 async def trends(n: int = 6) -> dict:
     periods = (await pb.all("fin_periods", sort="-start"))[:n]
     periods.reverse()
+    demo = await budget.demo_period_ids()
     cats = await category_map()
     out = []
     for p in periods:
@@ -193,6 +203,7 @@ async def trends(n: int = 6) -> dict:
         for cid, v in spent.items():
             groups[cats.get(cid, {}).get("group", "needs")] += v
         out.append({"period": {"id": p["id"], "start": p["start"], "end": p["end"]}, "income": income,
+                    "demo": p["id"] in demo,
                     "spent": sum(spent.values()), "groups": groups,
                     "by_category": {cid: v for cid, v in spent.items()}})
     return {"periods": out, "categories": {cid: cat_public(c) for cid, c in cats.items()}}
@@ -261,6 +272,7 @@ async def forecast() -> dict:
                       "target": g.get("target") or 0, "monthly_rate": int(monthly_rate), "months_to_go": months,
                       "target_date": g.get("target_date") or ""})
     return {
+        "demo": s["demo"],
         "period": s["period"], "days_left": days_left, "elapsed": elapsed,
         "daily_average": int(mean), "income": s["income"], "spent": s["spent"],
         "projected_total": int(projected_total),

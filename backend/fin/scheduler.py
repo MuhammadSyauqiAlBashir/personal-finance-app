@@ -21,6 +21,8 @@ def rp(n: int) -> str:
 async def job_close_periods(today: str):
     for item in await budget.close_finished_periods():
         p, closing = item["period"], item["closing"]
+        if closing.get("demo"):
+            continue
         swept = sum(s["amount"] for s in closing.get("swept", []))
         await budget.period_for()  # open the new month
         try:
@@ -33,6 +35,8 @@ async def job_close_periods(today: str):
 
 
 async def job_daily_report(today: str):
+    if await budget.is_demo((await budget.period_for())["id"]):
+        return
     data = await reports.daily(datetime.fromisoformat(today).date())
     if not data["total"] and not data["pending"]:
         body = f"No spending today. Safe to spend tomorrow: {rp(data['safe_tomorrow'])}."
@@ -47,6 +51,8 @@ async def job_daily_report(today: str):
 
 async def job_pace(today: str):
     period = await budget.period_for()
+    if await budget.is_demo(period["id"]):
+        return
     s = await budget.summary(period)
     flex = [w for w in s["wallets"] if w["category"]["group"] in ("needs", "wants") and w["budget"]]
     budget_total = sum(w["budget"] for w in flex)

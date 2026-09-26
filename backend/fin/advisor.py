@@ -76,7 +76,8 @@ ALLOC_SCHEMA = {
 
 
 async def history_lines(months: int = 3) -> str:
-    periods = await pb.all("fin_periods", filter="status = 'closed'", sort="-start")
+    demo = await budget.demo_period_ids()
+    periods = [p for p in await pb.all("fin_periods", filter="status = 'closed'", sort="-start") if p["id"] not in demo]
     cats = {c["id"]: c["name"] for c in await budget.categories(include_archived=True)}
     lines = []
     for p in periods[:months]:
@@ -144,7 +145,7 @@ async def commentary(kind: str, data: dict) -> str:
 
 
 async def chat_context() -> str:
-    period = await budget.period_for()
+    period = await budget.real_period()  # demo months are never advice context
     s = await budget.summary(period)
     wallets = "\n".join(f"- {w['category']['name']} ({w['category']['group']}): budget {rp(w['budget'])}, "
                         f"spent {rp(w['spent'])}, left {rp(w['left'])}" for w in s["wallets"])

@@ -210,6 +210,9 @@ input::placeholder, textarea::placeholder { color: var(--faint); }
 .li-sub { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; gap: 6px; align-items: center; }
 .li-right { text-align: right; flex: none; }
 .li-pills { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.li-note { font-size: 13px; color: var(--fg-2); font-style: italic; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.banner.demo { border-color: rgba(144, 133, 233, 0.5); background: rgba(144, 133, 233, 0.10); margin-bottom: 12px; }
+.banner.demo .ico { color: #b3aaf2; }
 .li-amount { font-weight: 650; font-variant-numeric: tabular-nums; }
 .li-amount.transfer { color: var(--muted); }
 .day-head { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 18px 6px 8px; }

@@ -87,6 +87,7 @@ export function txRow(tx, onclick) {
     el("div", { class: "li-main" },
       el("div", { class: "li-title", text: tx.merchant || tx.description || "Transaction" }),
       el("div", { class: "li-sub" }, el("span", { text: [tx.account, fmtTime(tx.occurred_at)].filter(Boolean).join(" · ") })),
+      tx.note ? el("div", { class: "li-note", text: `“${tx.note}”` }) : null,
       pills.length ? el("div", { class: "li-pills" }, ...pills) : null),
     el("div", { class: "li-right" }, el("div", { class: `li-amount${tx.kind === "transfer" ? " transfer" : ""}`, text: rp(tx.amount) })))
 }
@@ -94,7 +95,8 @@ export function txRow(tx, onclick) {
 // ---------------------------------------------------------------------------
 // Quick add
 // ---------------------------------------------------------------------------
-export function quickAdd(parent) {
+export async function quickAdd(parent) {
+  if (!categories.length) await loadCategories()
   const sh = sheet(parent ? "Add a purchase" : "Add a transaction")
   const fileInput = el("input", { type: "file", accept: "image/*", hidden: true })
   const scan = el("button", { class: "btn primary wide", type: "button" }, icon("camera"), "Scan receipt or payment screenshot")
@@ -124,6 +126,10 @@ export function quickAdd(parent) {
   const when = el("input", { type: "datetime-local", value: nowLocalInput() })
   const account = el("select", {}, ["Cash", "BCA", "Mandiri", "GoPay", "OVO", "ShopeePay", "DANA", "Other"].map((a) => el("option", { value: a, text: a })))
   const kind = el("select", {}, el("option", { value: "expense", text: "Spending" }), el("option", { value: "topup", text: "E-wallet top-up" }))
+  const wallet = categorySelect("")
+  wallet.options[0].textContent = "Wallet (optional; can choose when confirming)"
+  const walletField = el("label", { class: "field" }, el("span", { text: "Wallet" }), wallet)
+  kind.addEventListener("change", () => { walletField.hidden = kind.value !== "expense" })
   const msg = el("p", { class: "form-msg" })
   const save = el("button", { class: "btn wide", type: "submit", text: "Add" })
   const form = el("form", {},
@@ -133,7 +139,7 @@ export function quickAdd(parent) {
     parent ? null : el("div", { class: "row" },
       el("label", { class: "field grow" }, el("span", { text: "Paid from" }), account),
       el("label", { class: "field grow" }, el("span", { text: "Type" }), kind)),
-    msg, save)
+    walletField, msg, save)
   form.addEventListener("submit", async (e) => {
     e.preventDefault()
     if (!amount.money()) { msg.textContent = "Enter the amount."; return }
@@ -142,7 +148,8 @@ export function quickAdd(parent) {
         const tx = await api("/transactions", { method: "POST", json: {
           amount: amount.money(), merchant: merchant.value.trim(), occurred_at: when.value + ":00+07:00",
           account: parent ? parent.wallet : account.value, kind: parent ? "expense" : kind.value,
-          wallet: !parent && kind.value === "topup" ? account.value : "", parent: parent ? parent.id : "" } })
+          wallet: !parent && kind.value === "topup" ? account.value : "", parent: parent ? parent.id : "",
+          category: kind.value === "expense" || parent ? wallet.value : "" } })
         sh.close()
         openTransaction(tx.id, () => route())
       } catch (err) { msg.textContent = err.message }
@@ -188,7 +195,9 @@ async function txBody(tx, ctx) {
     tx.account ? el("dt", { text: "Account" }) : null, tx.account ? el("dd", { text: tx.account }) : null,
     tx.description ? el("dt", { text: "Type" }) : null, tx.description ? el("dd", { text: tx.description }) : null,
     tx.holder && !tx.holder.includes("[owner]") ? el("dt", { text: "Holder" }) : null,
-    tx.holder && !tx.holder.includes("[owner]") ? el("dd", { text: tx.holder }) : null))
+    tx.holder && !tx.holder.includes("[owner]") ? el("dd", { text: tx.holder }) : null,
+    tx.note && tx.status !== "pending" ? el("dt", { text: "Note" }) : null,
+    tx.note && tx.status !== "pending" ? el("dd", { text: tx.note }) : null))
 
   // Flags
   const flags = tx.flags || {}
@@ -437,20 +446,24 @@ function expenseSections(tx, ctx) {
   if (pending) {
     const amount = moneyInput(tx.amount)
     const merchant = el("input", { value: tx.merchant || "", maxlength: 200 })
-    const note = el("input", { value: tx.note || "", maxlength: 1000, placeholder: "Optional" })
     const save = el("button", { class: "btn small", type: "button", text: "Save details" })
-    const details = el("details", { class: "card" }, el("summary", { class: "muted", text: "Edit amount, merchant or note" }),
+    const details = el("details", { class: "card" }, el("summary", { class: "muted", text: "Edit amount or merchant" }),
       el("div", { style: { marginTop: "12px" } },
         el("label", { class: "field" }, el("span", { text: "Amount" }), el("div", { class: "money-wrap" }, amount)),
-        el("label", { class: "field" }, el("span", { text: "Merchant" }), merchant),
-        el("label", { class: "field" }, el("span", { text: "Note" }), note), save))
+        el("label", { class: "field" }, el("span", { text: "Merchant" }), merchant), save))
     save.onclick = () => busy(save, async () => {
-      await api(`/transactions/${tx.id}`, { method: "PATCH", json: { amount: amount.money(), merchant: merchant.value.trim(), note: note.value.trim() } })
+      await api(`/transactions/${tx.id}`, { method: "PATCH", json: { amount: amount.money(), merchant: merchant.value.trim() } })
       ctx.markChanged()
       toast("Saved")
       await ctx.reload()
     })
     out.push(details)
+
+    // ---- Note (optional) ----
+    const noteIn = el("textarea", { maxlength: 1000, rows: 2, placeholder: "e.g. Birthday dinner for Ibu; split with Andi" })
+    noteIn.value = tx.note || ""
+    out.push(el("div", { class: "card" }, el("div", { class: "card-title", text: "Note (optional)" }), noteIn,
+      el("p", { class: "hint", text: "Shown in the Inbox and in the monthly report." })))
 
     // ---- Confirm ----
     const msg = el("p", { class: "form-msg", role: "alert" })
@@ -463,7 +476,7 @@ function expenseSections(tx, ctx) {
         if (!confirm.dataset.ok) { confirm.dataset.ok = "1"; msg.textContent = "The receipt doesn't match this transaction. Fix the amount above, or tap Confirm again to keep it as is."; return }
       }
       try {
-        await api(`/transactions/${tx.id}/confirm`, { method: "POST", json: { splits, waive_reason: waiveReason } })
+        await api(`/transactions/${tx.id}/confirm`, { method: "POST", json: { splits, waive_reason: waiveReason, note: noteIn.value.trim() } })
         ctx.markChanged()
         toast("Confirmed", "good")
         ctx.close()

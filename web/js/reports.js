@@ -21,6 +21,12 @@ function statTile(label, value, delta) {
     delta ? el("div", { class: `d ${delta.cls || ""}`, text: delta.text }) : null)
 }
 
+function demoBanner(text) {
+  return el("div", { class: "banner demo" }, icon("alert"), el("div", { class: "grow" },
+    el("div", { class: "banner-title", text: "Demo data" }),
+    el("div", { class: "banner-sub", text: text || "Made-up numbers to preview the reports. The advisor ignores it; remove it in Settings." })))
+}
+
 function aiCard(title, text) {
   return el("div", { class: "card ai-card" }, el("div", { class: "ai-head" }, icon("spark"), title), markdown(text))
 }
@@ -29,10 +35,11 @@ function aiCard(title, text) {
 // Monthly
 // ---------------------------------------------------------------------------
 async function monthly(body) {
-  const { periods } = await api("/periods")
+  const [{ periods }, demo] = await Promise.all([api("/periods"), api("/demo")])
+  const demoIds = new Set(demo.periods)
   if (!current.period) current.period = (periods.find((p) => p.start <= todayKey() && p.end >= todayKey()) || periods[0] || {}).id || ""
   const picker = el("select", { onchange: () => { current.period = picker.value; body.style.opacity = 0.5; monthly(body).finally(() => { body.style.opacity = 1 }) } },
-    periods.map((p) => el("option", { value: p.id, text: `${fmtDate(p.start, { day: "numeric", month: "short", year: "numeric" })} – ${fmtDate(p.end)}${p.status === "open" ? " (current)" : ""}` })))
+    periods.map((p) => el("option", { value: p.id, text: `${fmtDate(p.start, { day: "numeric", month: "short", year: "numeric" })} – ${fmtDate(p.end)}${demoIds.has(p.id) ? " (demo)" : p.status === "open" ? " (current)" : ""}` })))
   picker.value = current.period
   const d = await api(`/reports/monthly?period=${current.period}`)
 
@@ -83,14 +90,21 @@ async function monthly(body) {
     columns(d.weekday_avg.map((x) => x.day), [{ key: "avg", label: "Average", color: "var(--s1)", values: d.weekday_avg.map((x) => x.amount) }], { height: 160, highlight: maxDay }),
     table(["Day", "Average"], d.weekday_avg.map((x) => [x.day, rp(x.amount)])))
 
+  const notes = d.notes && d.notes.length ? el("div", { class: "section" },
+    el("div", { class: "section-head" }, el("h2", { text: "Notes" }), el("span", { class: "muted small", text: `${d.notes.length} this month` })),
+    el("div", { class: "list" }, d.notes.map((n) => el("div", { class: "list-item" },
+      el("div", { class: "li-main" }, el("div", { class: "li-title", text: n.note }),
+        el("div", { class: "li-sub", text: `${fmtDate(n.date)} · ${n.merchant || "—"}` })),
+      el("div", { class: "li-amount", text: rp(n.amount) }))))) : null
+
   const merchants = d.top_merchants.length ? figure("Top merchants", "Where most of the money went",
     hbars(d.top_merchants.map((m) => ({ label: m.merchant, value: m.amount })), { color: "var(--s1)" }),
     table(["Merchant", "Spent"], d.top_merchants.map((m) => [m.merchant, rp(m.amount)]))) : null
 
-  body.replaceChildren(el("div", { style: { marginBottom: "12px" } }, picker), tiles,
+  body.replaceChildren(el("div", { style: { marginBottom: "12px" } }, picker), d.demo ? demoBanner() : null, tiles,
     el("div", { class: "section" }, review),
     el("div", { class: "section" }, rule503020(d.rule_50_30_20)),
-    el("div", { class: "section" }, budgetVsActual, spending, heat, weekday, merchants))
+    el("div", { class: "section" }, budgetVsActual, spending, heat, weekday, merchants), notes)
 }
 
 // ---------------------------------------------------------------------------
@@ -114,7 +128,7 @@ async function daily(body) {
   const hero = el("div", { class: "card glass hero" }, el("div", { class: "grow" },
     el("div", { class: "hero-label", text: "Spent" }), el("div", { class: "hero-value", text: rp(d.total) }),
     el("div", { class: "hero-sub", text: d.daily_pace ? `Daily pace for Needs & Wants: ${rp(d.daily_pace)}${vs !== null ? ` · today ${Math.round(vs * 100)}% of it` : ""}` : "Plan your wallets to see a daily pace." })))
-  const parts = [nav, hero]
+  const parts = [nav, d.demo ? demoBanner() : null, hero]
   if (d.note) parts.push(el("div", { class: "section" }, aiCard("Advisor", d.note)))
   if (d.by_category.length) {
     parts.push(el("div", { class: "section" }, figure("By wallet", null,
@@ -142,7 +156,7 @@ async function trends(body) {
     body.replaceChildren(el("div", { class: "empty-state" }, el("div", { class: "big", text: "📈" }), el("h3", { text: "Trends need two months" }),
       el("p", { text: "Come back after your first full budget month." })))
   }
-  const labels = d.periods.map((p) => fmtDate(p.period.start, { month: "short" }))
+  const labels = d.periods.map((p) => fmtDate(p.period.start, { month: "short" }) + (p.demo ? "*" : ""))
   const buckets = ["needs", "wants", "savings"]
   const series = buckets.map((b) => ({ key: b, label: GROUP_LABEL[b], color: GROUP_COLOR[b],
     values: d.periods.map((p) => Object.entries(p.groups).reduce((a, [g, v]) => a + (bucketOf(g) === b ? v : 0), 0)) }))
@@ -166,7 +180,8 @@ async function trends(body) {
   pick.onchange = drawCat
   const perCat = cats.length ? figure("One wallet over time", null, el("div", {}, el("div", { style: { marginBottom: "10px" } }, pick), holder)) : null
   if (cats.length) drawCat()
-  if (d.periods.length >= 2) body.replaceChildren(stack, saveRate, perCat)
+  const demoNote = d.periods.some((p) => p.demo) ? demoBanner("Months marked * are demo data.") : null
+  if (d.periods.length >= 2) body.replaceChildren(demoNote, stack, saveRate, perCat)
   else body.append(stack)
 }
 
@@ -186,7 +201,7 @@ async function forecast(body) {
       daysTotal: m.days_total, start: m.period.start }),
     table(["Day", "Spent that day"], m.days.map((x) => [fmtDate(x.date), rp(x.amount)])),
     legend([{ label: "Spent so far", color: "var(--s1)", line: true }, { label: "Even pace to budget", color: "var(--muted)", line: true }]))
-  const parts = [hero]
+  const parts = [f.demo ? demoBanner("This month is demo data, so this forecast is only a preview. Real forecasts start with October.") : null, hero]
   if (!f.enough_data) parts.push(el("div", { class: "banner info" }, icon("alert"), el("div", { class: "grow" },
     el("div", { class: "banner-title", text: "Early estimate" }), el("div", { class: "banner-sub", text: "Forecasts get reliable after about a week of confirmed spending." }))))
   if (f.note) parts.push(el("div", { class: "section" }, aiCard("Advisor", f.note)))

@@ -42,7 +42,7 @@ def ai_error(e: Exception):
 async def report_daily(day: str = "", note: bool = False, user: User = Depends(member)):
     d = date.fromisoformat(day) if day else budget.today()
     data = await reports.daily(d)
-    if note and (data["total"] or data["pending"]):
+    if note and not data["demo"] and (data["total"] or data["pending"]):
         data["note"] = await reports.ai_note("daily", d.isoformat(), data)
     return data
 
@@ -73,7 +73,7 @@ async def report_trends(months: int = 6, user: User = Depends(member)):
 @router.get("/reports/forecast")
 async def report_forecast(note: bool = False, user: User = Depends(member)):
     data = await reports.forecast()
-    if note and data["enough_data"]:
+    if note and data["enough_data"] and not data["demo"]:
         data["note"] = await reports.ai_note("forecast", budget.today().isoformat(), {
             k: data[k] for k in ("projected_total", "projected_range", "income", "spent", "days_left", "wallets", "goals")})
     return data
@@ -277,6 +277,35 @@ async def email_log(samples: bool = False, user: User = Depends(member)):
     data = await pb.list("fin_emails", filter=f"is_sample = {'true' if samples else 'false'}", sort="-received_at",
                          per_page=50, fields="id,received_at,sender,subject,status,method,parsed,error,is_sample")
     return {"emails": data.get("items", [])}
+
+
+@router.get("/demo")
+async def demo_status(user: User = Depends(member)):
+    return {"periods": sorted(await budget.demo_period_ids())}
+
+
+@router.delete("/demo")
+async def demo_remove(user: User = Depends(admin)):
+    """Remove all demo data (demo months, their transactions, income and plans)."""
+    ids = await budget.demo_period_ids()
+    removed = 0
+    for t in await pb.all("fin_transactions", filter="flags.demo = true", fields="id"):
+        await pb.delete("fin_transactions", t["id"])  # splits cascade
+        removed += 1
+    for pid in ids:
+        for coll in ("fin_incomes", "fin_allocations", "fin_moves", "fin_bill_payments"):
+            for r in await pb.all(coll, filter=f"period = {q(pid)}", fields="id"):
+                await pb.delete(coll, r["id"])
+        try:
+            p = await pb.get("fin_periods", pid)
+            for r in await pb.all("fin_reports", filter=f"key = {q(p['start'])} || key ~ {q(p['start'][:7])}", fields="id"):
+                await pb.delete("fin_reports", r["id"])
+            await pb.delete("fin_periods", pid)
+        except Exception:
+            pass
+    await pb.kv_set("demo_periods", [])
+    await budget.period_for()  # recreate the current month without demo data
+    return {"removed_transactions": removed, "removed_months": len(ids)}
 
 
 @router.post("/emails/{eid}/retry")

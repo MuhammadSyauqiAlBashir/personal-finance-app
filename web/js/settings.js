@@ -39,12 +39,32 @@ export async function renderSettings(page) {
     el("div", { class: "section-head section" }, el("h2", { text: "Data" })),
     el("div", { class: "list" },
       item("mail", "Bank emails", "What arrived and how it was read", () => emailSheet()),
-      item("🧭", "Setup guide", "Run the first-time setup again", () => go("setup"))),
+      item("🧭", "Setup guide", "Run the first-time setup again", () => go("setup")),
+      demoItem(page)),
     el("div", { class: "section" }, (() => {
       const b = el("button", { class: "btn wide danger", type: "button", text: `Log out (${state.me.username})` })
       b.onclick = async () => { await api("/logout", { method: "POST" }).catch(() => {}); location.hash = ""; location.reload() }
       return b
     })()))
+}
+
+function demoItem(page) {
+  if (state.me.role !== "admin") return null
+  const row = el("div", { class: "list-item", hidden: true })
+  api("/demo").then((d) => {
+    if (!d.periods.length) return
+    const b = el("button", { class: "btn small danger", type: "button", text: "Remove" })
+    armed(b, "Sure?", async () => {
+      const r = await api("/demo", { method: "DELETE" })
+      toast(`Removed ${r.removed_transactions} demo transactions`, "good")
+      renderSettings(page)
+    })
+    row.replaceChildren(el("div", { class: "li-icon", text: "🧪" }),
+      el("div", { class: "li-main" }, el("div", { class: "li-title", text: "Demo data" }),
+        el("div", { class: "li-sub", text: `${d.periods.length} demo month${d.periods.length === 1 ? "" : "s"} for previewing reports` })), b)
+    row.hidden = false
+  }).catch(() => {})
+  return row
 }
 
 // ---------------------------------------------------------------------------

@@ -69,7 +69,10 @@ export async function renderHome(page) {
   })
 
   const note = el("div", { class: "card ai-card", hidden: true })
-  page.replaceChildren(top, hero, tiles, ...alerts,
+  const demo = s.demo ? el("div", { class: "banner demo" }, icon("alert"), el("div", { class: "grow" },
+    el("div", { class: "banner-title", text: "This month is demo data" }),
+    el("div", { class: "banner-sub", text: "A preview so you can see the reports. Real tracking starts on the 1st; the advisor ignores the demo." }))) : null
+  page.replaceChildren(top, demo, hero, tiles, ...alerts,
     el("div", { class: "section" },
       el("div", { class: "section-head" }, el("h2", { text: "Wallets" }), el("a", { class: "link-btn", href: "#wallets", text: "All" })),
       walletList),
