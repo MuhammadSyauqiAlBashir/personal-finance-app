@@ -178,3 +178,23 @@ the personal inbox; they will arrive unlabelled, which is fine for building rule
 - A Gemini API key from Google AI Studio — put on the server by the owner, never pasted in chat.
 - ~~The Google account for Drive~~: `personalfinancemanagementsera@gmail.com` (one-time sign-in at the end).
 - ~~Wife's account~~: `bells` (already approved); add her as a member.
+
+## 11. Changes after the first build (2026-09-26 → 27)
+
+| Change | Why |
+|---|---|
+| Budget cycle start day is configurable (now **1**); changing it keeps past months and re-dates the current one | Owner wanted a clean start on 1 Oct |
+| `tracking_start` = 2026-10-01: earlier bank transactions are stored as `ignored` (flag `before_tracking_start`); bill, pace, pending and daily notifications wait for it | Clean Inbox from day one |
+| E-wallet top-ups are balances: purchases (with receipts) are added under them; fees become their own item | Owner decision (spending is the purchase, not the top-up) |
+| Receipts reach Drive through the same Apps Script instead of Drive OAuth | No Google credentials on the server; no Cloud project for the owner |
+| Demo months (kv `demo_periods`): labelled everywhere, ignored by the advisor, notifications, learning and the sweep; removable in Settings | Preview reports before real data (demo was later removed by the owner) |
+| Optional note on confirm, shown in the Inbox and a "Notes" section of the monthly report | Owner request |
+| Optional wallet when adding by hand (pre-selected at confirm) | Owner expected to choose it when adding |
+| Pushes sent with `Urgency: high`; every push logged | iOS held normal-urgency pushes until the app opened |
+| Front end retries reads after a long sleep | iOS stale-connection "no internet" on first open |
+| Gemini: money as strings, all fields required + `propertyOrdering`, no temperature override, wide model fallback | Free-tier models looped/skipped fields; 503 spikes |
+
+## 12. Status (2026-09-27)
+
+Live; installed on both iPhones; setup done; push verified on both phones; October income + plan in place. Next:
+real test payment on/after 1 Oct, wife's email forwarding, automated encrypted backups.
