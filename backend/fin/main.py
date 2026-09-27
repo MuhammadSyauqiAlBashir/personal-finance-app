@@ -120,7 +120,7 @@ async def login(body: Credentials, request: Request, response: Response):
         raise HTTPException(403, "Your account is waiting for approval.")
     if status != 200:
         raise HTTPException(401, "Wrong username or password.")
-    if data["record"].get("role") == "service":
+    if (data["record"].get("role") or "") not in ("", "admin"):  # machine logins can't sign in
         raise HTTPException(401, "Wrong username or password.")
     set_cookie(response, COOKIE, data["token"])
     request.cookies[COOKIE] = data["token"]

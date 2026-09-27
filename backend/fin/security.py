@@ -127,7 +127,7 @@ async def signed_in(request: Request, response: Response) -> User:
     rec, fresh = verified
     if fresh != token:
         set_cookie(response, COOKIE, fresh)
-    if rec.get("role") == "service" or not await is_member(rec):
+    if (rec.get("role") or "") not in ("", "admin") or not await is_member(rec):  # machine logins
         raise HTTPException(403, "This account doesn't have access to the finance app. Ask the admin.")
     user = User(id=rec["id"], username=rec.get("username", ""), role=rec.get("role") or "user", token=fresh)
     sid = request.cookies.get(SID_COOKIE, "")
