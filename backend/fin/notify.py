@@ -52,12 +52,14 @@ def public_key() -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
-def _send_one(sub: dict, payload: str) -> int:
+def _send_one(sub: dict, payload: str, urgency: str) -> int:
     try:
+        # Urgency "high" makes Apple/Google deliver right away even when the phone is idle
+        # (without it iOS may hold the notification until the app is opened).
         webpush(
             subscription_info={"endpoint": sub["endpoint"], "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]}},
             data=payload, vapid_private_key=vapid(), vapid_claims={"sub": config.VAPID_SUBJECT},
-            ttl=12 * 3600, timeout=15,
+            ttl=12 * 3600, timeout=15, headers={"Urgency": urgency},
         )
         return 201
     except WebPushException as e:
@@ -67,7 +69,8 @@ def _send_one(sub: dict, payload: str) -> int:
         return 0
 
 
-async def send(title: str, body: str, url: str = "/", tag: str = "", users: list[str] | None = None):
+async def send(title: str, body: str, url: str = "/", tag: str = "", users: list[str] | None = None,
+               urgency: str = "high"):
     """Push to every subscribed device of the given users (default: all members)."""
     filt = " || ".join(f"user = {q(u)}" for u in users) if users else ""
     try:
@@ -77,7 +80,8 @@ async def send(title: str, body: str, url: str = "/", tag: str = "", users: list
         return
     payload = json.dumps({"title": title, "body": body, "url": url, "tag": tag or url})
     for sub in subs:
-        status = await asyncio.to_thread(_send_one, sub, payload)
+        status = await asyncio.to_thread(_send_one, sub, payload, urgency)
+        log.info("push %r -> %s…: %s", title[:40], sub["endpoint"][8:30], status)
         if status in (404, 410):  # subscription expired or app removed
             await pb.delete("fin_push_subs", sub["id"])
         elif status not in (200, 201):

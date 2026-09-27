@@ -164,6 +164,20 @@ export class ApiError extends Error {
 let onAuthProblem = () => {}
 export const setAuthHandler = (fn) => { onAuthProblem = fn }
 
+// After the app has been asleep a long time, iOS often reuses a connection the
+// server already closed, so the first request fails. Retry quickly before
+// reporting "no connection".
+export async function fetchRetry(url, opts = {}, tries = 3) {
+  for (let i = 0; ; i++) {
+    try {
+      return await fetch(url, opts)
+    } catch (err) {
+      if (i >= tries - 1) throw new ApiError(0, "No connection. Check your internet.")
+      await sleep(600 * (i + 1))
+    }
+  }
+}
+
 export async function api(path, { method = "GET", json, body, quiet = false } = {}) {
   const opts = { method, credentials: "same-origin", headers: { "X-Fin": "1" } }
   if (json !== undefined) {
@@ -172,12 +186,7 @@ export async function api(path, { method = "GET", json, body, quiet = false } = 
   } else if (body !== undefined) {
     opts.body = body
   }
-  let res
-  try {
-    res = await fetch("/api" + path, opts)
-  } catch (_) {
-    throw new ApiError(0, "No connection. Check your internet.")
-  }
+  const res = await fetchRetry("/api" + path, opts, method === "GET" ? 3 : 1)  // never repeat a save
   let data = {}
   try { data = await res.json() } catch (_) {}
   if ((res.status === 401 || res.status === 423 || res.status === 403) && !quiet) onAuthProblem(res.status, data)

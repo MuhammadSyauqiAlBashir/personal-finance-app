@@ -1,4 +1,4 @@
-import { $, $$, api, el, icon, setAuthHandler } from "./lib.js?v=__VERSION__"
+import { $, $$, api, el, fetchRetry, icon, setAuthHandler } from "./lib.js?v=__VERSION__"
 import { renderHome } from "./home.js?v=__VERSION__"
 import { renderInbox, openTransaction } from "./inbox.js?v=__VERSION__"
 import { renderWallets } from "./wallets.js?v=__VERSION__"
@@ -235,7 +235,7 @@ async function boot() {
     })
   }
   try {
-    const res = await fetch("/api/me", { credentials: "same-origin" })
+    const res = await fetchRetry("/api/me", { credentials: "same-origin" }, 4)
     const data = await res.json().catch(() => ({}))
     if (res.status === 200) {
       state.me = data.user
@@ -245,7 +245,9 @@ async function boot() {
       renderAuth(res.status === 403 ? data.error : "")
     }
   } catch (_) {
-    renderAuth("No connection. Check your internet and reopen the app.")
+    renderAuth("No connection yet. Retrying when you're back online…")
+    window.addEventListener("online", () => boot(), { once: true })
+    setTimeout(() => { if (!state.me) boot() }, 5000)
   }
 }
 

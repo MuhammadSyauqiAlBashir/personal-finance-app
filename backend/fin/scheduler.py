@@ -35,6 +35,8 @@ async def job_close_periods(today: str):
 
 
 async def job_daily_report(today: str):
+    if not await tracking_started(today):
+        return
     if await budget.is_demo((await budget.period_for())["id"]):
         return
     data = await reports.daily(datetime.fromisoformat(today).date())
@@ -50,6 +52,8 @@ async def job_daily_report(today: str):
 
 
 async def job_pace(today: str):
+    if not await tracking_started(today):
+        return
     period = await budget.period_for()
     if await budget.is_demo(period["id"]):
         return
@@ -68,7 +72,14 @@ async def job_pace(today: str):
                           f"Safe to spend today: {rp(s['safe_today'])}.", "/#wallets", tag="pace")
 
 
+async def tracking_started(today: str) -> bool:
+    start = await pb.kv_get("tracking_start", "")
+    return not start or today >= start
+
+
 async def job_bills(today: str):
+    if not await tracking_started(today):
+        return
     t = datetime.fromisoformat(today).date()
     period = await budget.period_for()
     paid = {b["bill"] for b in await pb.all("fin_bill_payments", filter=f"period = '{period['id']}'")}
@@ -95,11 +106,16 @@ async def job_bills(today: str):
                               "/#bills", tag=f"bill-{b['id']}")
 
 
+async def job_pending(today: str):
+    if await tracking_started(today):
+        await notify.pending_reminder()
+
+
 JOBS = [
     # (name, hour, minute, function)
     ("close_periods", 0, 5, job_close_periods),
     ("bills", 9, 0, job_bills),
-    ("pending", 19, 0, lambda today: notify.pending_reminder()),
+    ("pending", 19, 0, lambda today: job_pending(today)),
     ("pace", 20, 0, job_pace),
     ("daily_report", 21, 0, job_daily_report),
 ]
