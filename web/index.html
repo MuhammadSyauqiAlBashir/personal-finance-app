@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0c10">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Finance">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Financial Management</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<link rel="stylesheet" href="/app.css?v=__VERSION__">
+<script type="module" src="/js/app.js?v=__VERSION__"></script>
+</head>
+<body>
+<div class="bg" aria-hidden="true"></div>
+
+<div id="splash" class="center-view"><img src="/icons/icon-192.png" width="72" height="72" alt="" class="splash-icon"></div>
+<main id="authView" class="center-view" hidden></main>
+<main id="lockView" class="center-view" hidden></main>
+<main id="setupView" class="page" hidden></main>
+
+<div id="appView" hidden>
+  <main id="page" class="page"></main>
+  <nav class="tabbar" aria-label="Sections">
+    <a href="#home" data-tab="home"><span class="tab-ico" data-icon="home"></span><span>Home</span></a>
+    <a href="#inbox" data-tab="inbox"><span class="tab-ico" data-icon="inbox"></span><span>Inbox</span><b class="badge" id="pendingBadge" hidden></b></a>
+    <a href="#wallets" data-tab="wallets"><span class="tab-ico" data-icon="wallet"></span><span>Wallets</span></a>
+    <a href="#reports" data-tab="reports"><span class="tab-ico" data-icon="chart"></span><span>Reports</span></a>
+    <a href="#advisor" data-tab="advisor"><span class="tab-ico" data-icon="spark"></span><span>Advisor</span></a>
+  </nav>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

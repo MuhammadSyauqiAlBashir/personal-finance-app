@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+pb_data/
+*.cred
+*.png
+!web/icons/*.png

@@ -1,0 +1,57 @@
+[Unit]
+Description=Financial Management backend (FastAPI)
+After=network-online.target pocketbase.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=finance
+Group=finance
+WorkingDirectory=/opt/finance
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/finance/env
+ExecStart=/opt/finance/venv/bin/uvicorn fin.main:app --app-dir /opt/finance \
+  --host 127.0.0.1 --port 8100 --workers 1 \
+  --proxy-headers --forwarded-allow-ips 127.0.0.1 \
+  --no-server-header --no-access-log
+Restart=on-failure
+RestartSec=5
+UMask=0077
+StateDirectory=finance
+StateDirectoryMode=0700
+
+# Resource limits (1GB box)
+MemoryHigh=200M
+MemoryMax=300M
+TasksMax=64
+
+# Sandbox: read-only system; writable only /var/lib/finance (StateDirectory)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+RemoveIPC=true
+
+[Install]
+WantedBy=multi-user.target
