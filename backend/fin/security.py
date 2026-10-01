@@ -6,12 +6,15 @@
 - Membership: admins always have access; everyone else must be in fin_members.
 - Lock: a second cookie `fin_sid` names a server-side session. After
   LOCK_IDLE_SECONDS without requests, the API answers 423 until a passkey
-  (Face ID) check succeeds. Sessions live in memory, so a restart locks everyone.
+  (Face ID) check succeeds. Lock sessions are also saved (hashed ids only) to
+  STATE_DIR/lock_sessions.json so a restart or deploy doesn't lock everyone.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import secrets
 import time
 from collections import OrderedDict
@@ -51,6 +54,47 @@ class LockState:
 
 _auth_cache: OrderedDict[str, tuple[float, dict, str]] = OrderedDict()
 _locks: dict[str, LockState] = {}
+
+# ---- lock sessions survive restarts --------------------------------------------------------------
+_STORE = os.path.join(config.STATE_DIR, "lock_sessions.json")
+_saved_at = 0.0
+
+
+def _hash(sid: str) -> str:
+    return hashlib.sha256(sid.encode()).hexdigest()
+
+
+def _load() -> dict:
+    try:
+        with open(_STORE) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+_persisted: dict = _load()
+
+
+def persist(force: bool = False):
+    """Write the lock sessions (hashed ids, owner, last activity, unlocked) at most every 20 s."""
+    global _saved_at
+    now = time.monotonic()
+    if not force and now - _saved_at < 20:
+        return
+    _saved_at = now
+    wall = time.time()
+    data = dict(_persisted)
+    for sid, st in _locks.items():
+        data[_hash(sid)] = {"u": st.user_id, "seen": wall - (now - st.last_seen), "unlocked": st.unlocked}
+    data = {k: v for k, v in data.items() if wall - v.get("seen", 0) < 30 * 86400}
+    try:
+        tmp = _STORE + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp, _STORE)
+    except OSError:
+        pass
 
 
 def client_ip(request: Request) -> str:
@@ -112,6 +156,12 @@ def new_sid(user_id: str, unlocked: bool) -> str:
 
 def lock_state(sid: str, user_id: str) -> LockState | None:
     st = _locks.get(sid)
+    if not st and sid:
+        rec = _persisted.get(_hash(sid))
+        if rec and rec.get("u") == user_id:
+            idle = max(0.0, time.time() - float(rec.get("seen", 0)))
+            st = LockState(user_id=user_id, unlocked=bool(rec.get("unlocked")), last_seen=time.monotonic() - idle)
+            _locks[sid] = st
     return st if st and st.user_id == user_id else None
 
 
@@ -151,8 +201,10 @@ async def member(user: User = Depends(signed_in)) -> User:
         if await pb.first("fin_passkeys", f"user = {q(user.id)}"):
             st.unlocked = False
     if not st.unlocked:
+        persist()
         raise HTTPException(423, "Locked. Unlock with Face ID.")
     st.last_seen = now
+    persist()
     return user
 
 

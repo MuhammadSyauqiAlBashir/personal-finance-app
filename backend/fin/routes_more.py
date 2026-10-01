@@ -18,7 +18,7 @@ from webauthn.helpers.structs import (AuthenticatorSelectionCriteria, PublicKeyC
 
 from . import advisor, ai, budget, config, notify, reports
 from .pb import pb, q
-from .security import User, _locks, admin, member, signed_in
+from .security import User, _locks, admin, member, persist, signed_in
 
 router = APIRouter(prefix="/api")
 PB_ID = re.compile(r"^[a-z0-9]{15}$")
@@ -258,6 +258,7 @@ async def passkey_auth_verify(body: CredentialIn, user: User = Depends(signed_in
     await pb.update("fin_passkeys", rec["id"], {"sign_count": v.new_sign_count})
     st.unlocked = True
     st.last_seen = time.monotonic()
+    persist(force=True)
     return {"ok": True}
 
 
@@ -272,6 +273,7 @@ async def alive(user: User = Depends(member)):
 async def lock_now(user: User = Depends(signed_in)):
     if await user_passkeys(user.id):
         _locks[user.sid].unlocked = False
+        persist(force=True)
     return {"ok": True}
 
 

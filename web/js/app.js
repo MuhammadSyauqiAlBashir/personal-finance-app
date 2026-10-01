@@ -204,7 +204,10 @@ function renderLock() {
 // Size the app to the real window height (see #appView in app.css). Re-measured on rotate/resize, but not while the
 // keyboard is open (then the visual viewport shrinks and the frame should stay put).
 function fitHeight() {
-  const h = Math.max(window.innerHeight, document.documentElement.clientHeight)
+  let h = Math.max(window.innerHeight, document.documentElement.clientHeight)
+  // Home Screen app: it always covers the whole screen, but iOS can report the window one status bar short.
+  const standalone = navigator.standalone || matchMedia("(display-mode: standalone)").matches
+  if (standalone && screen.height) h = Math.max(h, matchMedia("(orientation: landscape)").matches ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height))
   const kb = window.visualViewport && window.visualViewport.height < h * 0.75
   if (!kb) document.documentElement.style.setProperty("--app-h", `${h}px`)
 }
