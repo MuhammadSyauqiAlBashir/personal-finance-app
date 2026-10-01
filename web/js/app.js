@@ -150,7 +150,9 @@ async function unlockWithPasskey() {
   await api("/passkey/auth/verify", { method: "POST", json: { credential: credToJSON(cred) }, quiet: true })
 }
 
+let lockSeq = 0
 function renderLock() {
+  lockSeq++
   state.locked = true
   // If the app (or setup) is open, lock on top of it so nothing typed is lost; otherwise show the lock page.
   const overlay = !$("#appView").hidden || !$("#setupView").hidden
@@ -172,12 +174,44 @@ function renderLock() {
     }
   }
   btn.onclick = tryUnlock
+  // Try Face ID straight away. iOS only allows this right after the app opens; if it refuses (it fails instantly,
+  // before any Face ID sheet), quietly leave the button for a tap.
+  const auto = async () => {
+    if (!window.PublicKeyCredential || state.lockAuto === lockSeq) return
+    state.lockAuto = lockSeq
+    const t0 = Date.now()
+    msg.textContent = ""
+    btn.disabled = true
+    try {
+      await unlockWithPasskey()
+      state.locked = false
+      if (overlay) { $("#lockView").hidden = true; $("#lockView").classList.remove("lock-overlay"); resumeAfterUnlock() }
+      else await afterLogin()
+    } catch (err) {
+      if (!(err.name === "NotAllowedError" && Date.now() - t0 < 1500)) msg.textContent = err.name === "NotAllowedError" ? "Face ID was cancelled. Tap to try again." : err.message
+    } finally {
+      btn.disabled = false
+    }
+  }
+  setTimeout(auto, 250)
   const logout = el("button", { class: "link-btn", type: "button", style: { marginTop: "16px" }, text: "Log out instead" })
   logout.onclick = async () => { await api("/logout", { method: "POST", quiet: true }).catch(() => {}); state.me = null; state.locked = false; renderAuth() }
   $("#lockView").replaceChildren(el("div", { class: "card lock-card" }, icon("lock", "big"),
     el("h2", { text: "Locked" }), el("p", { class: "muted", style: { margin: "6px 0 18px" }, text: "Your finances are protected. Unlock to continue." }),
     btn, msg, logout))
 }
+
+// Size the app to the real window height (see #appView in app.css). Re-measured on rotate/resize, but not while the
+// keyboard is open (then the visual viewport shrinks and the frame should stay put).
+function fitHeight() {
+  const h = Math.max(window.innerHeight, document.documentElement.clientHeight)
+  const kb = window.visualViewport && window.visualViewport.height < h * 0.75
+  if (!kb) document.documentElement.style.setProperty("--app-h", `${h}px`)
+}
+fitHeight()
+window.addEventListener("resize", fitHeight)
+window.addEventListener("orientationchange", () => setTimeout(fitHeight, 300))
+window.addEventListener("pageshow", fitHeight)
 
 // No pinch / double-tap zoom (iOS ignores user-scalable=no in some cases), and keep the page itself from drifting
 // after the keyboard closes (that's what lifted the tab bar).
