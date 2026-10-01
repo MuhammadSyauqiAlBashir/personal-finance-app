@@ -10,7 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from . import ai, budget, categorize, config, drive, notify, receipts
+from . import ai, budget, categorize, config, details, drive, notify, receipts
 from .pb import PBError, pb, q
 from .security import User, member
 
@@ -47,9 +47,11 @@ async def enrich(txs: list[dict]) -> list[dict]:
     topups = [t["id"] for t in txs if t["kind"] == "topup"]
     children = await pb.all("fin_transactions", filter=" || ".join(f"parent = {q(i)}" for i in topups),
                             sort="occurred_at") if topups else []
+    owners = (await pb.kv_get("account_owners", {})) or {}
     out = []
     for t in txs:
         item = dict(t)
+        item["owner"] = owners.get(details.account_key(t.get("account", "")), "")
         item["splits"] = [s for s in splits if s["transaction"] == t["id"]]
         item["receipts"] = [{"id": r["id"], "match": r.get("match"), "drive_state": r.get("drive_state")}
                             for r in recs if r["transaction"] == t["id"]]
@@ -95,9 +97,32 @@ async def get_transaction(tid: str, user: User = Depends(member)):
             em = await pb.get("fin_emails", tx["email"])
             item["email_info"] = {"subject": em.get("subject"), "method": em.get("method"),
                                   "sender": em.get("sender"), "body": em.get("body", "")[:6000]}
+            item["bank_details"] = details.email_details(em.get("sender", ""), em.get("subject", ""), em.get("body", ""),
+                                                         em.get("parsed"))
+            item["bank_details"]["account_key"] = details.account_key(item["bank_details"]["from"].get("label", "")) \
+                or details.account_key(tx.get("account", ""))
         except PBError:
             pass
     return item
+
+
+class OwnerIn(BaseModel):
+    account: str = Field(min_length=3, max_length=40)
+    username: str = Field(default="", max_length=64)
+
+
+@router.post("/account-owner")
+async def set_account_owner(body: OwnerIn, user: User = Depends(member)):
+    """Remember whose bank account this is (e.g. 'BCA:73' → 'bells'), so the Inbox can show it."""
+    if body.username and not await pb.first("fin_members", f"username = {q(body.username)}"):
+        raise HTTPException(400, "Unknown family member.")
+    owners = (await pb.kv_get("account_owners", {})) or {}
+    if body.username:
+        owners[body.account] = body.username
+    else:
+        owners.pop(body.account, None)
+    await pb.kv_set("account_owners", owners)
+    return {"owners": owners}
 
 
 class TxIn(BaseModel):

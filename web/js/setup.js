@@ -17,7 +17,7 @@ export async function renderSetup(root, step) {
   const body = el("div")
   root.replaceChildren(header, body)
   await ({ profile, cycle, categories, bills, goals, income, plan, device })[step](body, next)
-  window.scrollTo(0, 0)
+  const sv = document.getElementById("setupView"); if (sv) sv.scrollTop = 0
 }
 
 function title(t, lead) {

@@ -19,8 +19,11 @@ export async function renderAdvisor(page) {
 
   page.replaceChildren(el("div", { class: "topbar" },
     el("div", {}, el("h1", { text: "Advisor" }), el("div", { class: "sub", text: "Knows your wallets, goals and family profile." })), clear), chat)
-  page.append(bar)
+  // The input sits in the app frame right above the tab bar (not floating), so the keyboard can't push the bar around.
+  const tabbar = document.querySelector("#appView .tabbar")
+  if (tabbar) tabbar.before(bar); else page.append(bar)
   document.querySelectorAll(".chat-input").forEach((n) => { if (n !== bar) n.remove() })
+  const toBottom = () => { const sc = document.getElementById("page"); if (sc) sc.scrollTop = sc.scrollHeight }
   // Remove the input bar when leaving this tab.
   const cleanup = () => { if (!location.hash.startsWith("#advisor")) { bar.remove(); window.removeEventListener("hashchange", cleanup) } }
   window.addEventListener("hashchange", cleanup)
@@ -37,7 +40,7 @@ export async function renderAdvisor(page) {
       el("div", { class: "suggestions" }, SUGGESTIONS.map((s) => el("button", { class: "chip", type: "button", text: s, onclick: () => ask(s) })))))
   }
   for (const m of messages) add(m.role, m.content)
-  window.scrollTo(0, document.body.scrollHeight)
+  toBottom()
 
   async function ask(text) {
     text = text.trim()
@@ -46,7 +49,7 @@ export async function renderAdvisor(page) {
     add("user", text)
     const thinking = add("assistant", "_Thinking…_")
     thinking.classList.add("skeleton")
-    window.scrollTo(0, document.body.scrollHeight)
+    toBottom()
     send.disabled = true
     try {
       const { answer } = await api("/advisor/chat", { method: "POST", json: { message: text } })
@@ -57,7 +60,7 @@ export async function renderAdvisor(page) {
       input.value = text
     } finally {
       send.disabled = false
-      window.scrollTo(0, document.body.scrollHeight)
+      toBottom()
     }
   }
   form.addEventListener("submit", (e) => { e.preventDefault(); ask(input.value) })

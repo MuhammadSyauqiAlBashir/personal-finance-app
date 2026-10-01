@@ -42,7 +42,12 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
-html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--fg); }
+html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: var(--bg); color: var(--fg); }
+:where(*) { touch-action: manipulation; } /* no double-tap zoom */
+/* App frame: the page never scrolls or zooms; each view scrolls inside itself. */
+#appView { position: fixed; inset: 0; display: flex; flex-direction: column; }
+#appView > #page { flex: 1; min-height: 0; width: 100%; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+#setupView, #authView, #lockView:not(.lock-overlay), #splash { position: fixed; inset: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 body {
   font: 16px/1.45 var(--font);
   -webkit-font-smoothing: antialiased;
@@ -72,11 +77,11 @@ p { margin: 0; }
 /* ---------- Layout ---------- */
 .page {
   max-width: 680px; margin: 0 auto;
-  padding: calc(14px + var(--safe-top)) 16px calc(96px + var(--safe-bottom));
+  padding: calc(14px + var(--safe-top)) 16px 96px;
 }
 #setupView.page { padding-bottom: calc(32px + var(--safe-bottom)); }
 .center-view {
-  min-height: 100vh; display: grid; place-items: center;
+  min-height: 100%; display: grid; place-items: center;
   padding: calc(24px + var(--safe-top)) 20px calc(24px + var(--safe-bottom));
 }
 .stack-v { display: grid; gap: 12px; }
@@ -284,7 +289,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(2px); 
 
 /* ---------- Tab bar ---------- */
 .tabbar {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  position: relative; flex: none; z-index: 20;
   display: grid; grid-template-columns: repeat(5, 1fr);
   padding: 6px 8px calc(6px + var(--safe-bottom));
   background: rgba(11, 12, 16, 0.82); -webkit-backdrop-filter: blur(20px) saturate(1.4); backdrop-filter: blur(20px) saturate(1.4);
@@ -418,14 +423,14 @@ svg.chart .crosshair { stroke: var(--fg-2); stroke-width: 1; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
 /* ---------- Advisor ---------- */
-.chat { display: flex; flex-direction: column; gap: 10px; padding-bottom: 90px; }
+.chat { display: flex; flex-direction: column; gap: 10px; padding-bottom: 8px; }
 .msg { max-width: 88%; padding: 11px 14px; border-radius: 18px; font-size: 15px; }
 .msg.user { align-self: flex-end; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); border-bottom-right-radius: 6px; white-space: pre-wrap; }
 .msg.assistant { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 6px; }
 .msg.assistant .md p:first-child { margin-top: 0; }
 .chat-input {
-  position: fixed; left: 0; right: 0; bottom: calc(62px + var(--safe-bottom)); z-index: 12;
-  padding: 10px 16px; background: linear-gradient(180deg, transparent, var(--bg) 35%);
+  position: relative; flex: none; z-index: 12;
+  padding: 8px 16px; background: var(--bg); border-top: 1px solid var(--line);
 }
 .chat-input form { max-width: 648px; margin: 0 auto; display: flex; gap: 8px; }
 .chat-input input { border-radius: 22px; }
@@ -446,3 +451,17 @@ svg.chart .crosshair { stroke: var(--fg-2); stroke-width: 1; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Face ID lock on top of the open app (keeps whatever was being typed) */
+#lockView.lock-overlay { position: fixed; inset: 0; z-index: 90; background: color-mix(in srgb, var(--bg) 82%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+
+/* ---- Bank details card (Inbox) ---- */
+.bank-card .bank-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.bank-badge { font-weight: 800; font-size: 12px; padding: 3px 9px; border-radius: 8px; background: var(--surface-2, #2a2f3a); color: #fff; letter-spacing: .02em; }
+.bank-badge.bca { background: #0060af; }
+.bank-badge.mandiri { background: #003d79; color: #ffcf00; }
+.bank-card .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; word-break: break-all; }
+.bank-card dl.small { margin-top: 8px; font-size: 13px; }
+.bank-card dd.full { grid-column: 1 / -1; color: var(--muted); margin: 0; }
+.owner-pick { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-left: 6px; }
+.chip.small { padding: 3px 10px; font-size: 13px; }

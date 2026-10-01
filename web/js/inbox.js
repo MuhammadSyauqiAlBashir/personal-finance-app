@@ -1,5 +1,5 @@
 import { api, armed, busy, el, fmtDay, fmtTime, icon, localDateKey, moneyInput, nowLocalInput, rp, sheet, shrinkImage, toast } from "./lib.js?v=__VERSION__"
-import { refreshBadge, route } from "./app.js?v=__VERSION__"
+import { refreshBadge, route, state } from "./app.js?v=__VERSION__"
 
 let categories = []
 async function loadCategories() {
@@ -86,7 +86,7 @@ export function txRow(tx, onclick) {
     el("div", { class: "li-icon", text: txIcon(tx) }),
     el("div", { class: "li-main" },
       el("div", { class: "li-title", text: tx.merchant || tx.description || "Transaction" }),
-      el("div", { class: "li-sub" }, el("span", { text: [tx.account, fmtTime(tx.occurred_at)].filter(Boolean).join(" · ") })),
+      el("div", { class: "li-sub" }, el("span", { text: [tx.account, tx.owner ? `👤 ${ownerName(tx.owner)}` : "", tx.description && tx.description !== tx.merchant ? tx.description : "", fmtTime(tx.occurred_at)].filter(Boolean).join(" · ") })),
       tx.note ? el("div", { class: "li-note", text: `“${tx.note}”` }) : null,
       pills.length ? el("div", { class: "li-pills" }, ...pills) : null),
     el("div", { class: "li-right" }, el("div", { class: `li-amount${tx.kind === "transfer" ? " transfer" : ""}`, text: rp(tx.amount) })))
@@ -198,6 +198,8 @@ async function txBody(tx, ctx) {
     tx.holder && !tx.holder.includes("[owner]") ? el("dd", { text: tx.holder }) : null,
     tx.note && tx.status !== "pending" ? el("dt", { text: "Note" }) : null,
     tx.note && tx.status !== "pending" ? el("dd", { text: tx.note }) : null))
+
+  if (tx.bank_details) box.append(bankCard(tx, ctx))
 
   // Flags
   const flags = tx.flags || {}
@@ -485,4 +487,69 @@ function expenseSections(tx, ctx) {
     out.push(el("div", { class: "sticky-actions" }, msg, confirm))
   }
   return out
+}
+
+
+// ---------------------------------------------------------------------------
+// Bank details (read from the bank email when the transaction is opened)
+// ---------------------------------------------------------------------------
+let membersCache = null
+async function members() {
+  if (!membersCache) { try { membersCache = (await api("/members")).members || [] } catch (_) { membersCache = [] } }
+  return membersCache
+}
+export function ownerName(username) {
+  const me = state.me && state.me.username
+  return username === me ? "you" : username
+}
+
+function bankCard(tx, ctx) {
+  const d = tx.bank_details || {}
+  const from = d.from || {}, to = d.to || {}
+  const rows = []
+  const row = (label, value, extra) => { if (value || extra) rows.push(el("dt", { text: label }), el("dd", {}, value || "", extra || "")) }
+  // From: bank account + whose account it is
+  const ownerBox = el("span", { class: "owner-pick" })
+  const drawOwner = async () => {
+    const list = await members()
+    const cur = tx.owner || ""
+    ownerBox.replaceChildren(
+      ...(cur ? [el("span", { class: "pill ok", text: `👤 ${ownerName(cur)}` })] : [el("span", { class: "small muted", text: "Whose account?" })]),
+      ...list.filter((m) => m.username !== cur).map((m) => el("button", { class: "chip small", type: "button", text: ownerName(m.username),
+        onclick: async () => {
+          await api("/account-owner", { method: "POST", json: { account: d.account_key, username: m.username } })
+          tx.owner = m.username; ctx.markChanged(); toast(`${from.label || "This account"} → ${ownerName(m.username)}`); drawOwner()
+        } })))
+  }
+  if (d.account_key) drawOwner()
+  row("From", [from.label, from.product].filter(Boolean).join(" · "), d.account_key ? ownerBox : null)
+  if (from.holder) row("Account name", from.holder)
+  // To
+  const toBits = [to.name, to.bank && to.account ? `${to.bank} ${to.account}` : to.account || to.bank].filter(Boolean)
+  row(tx.kind === "topup" ? "Top-up to" : tx.kind === "transfer" ? "Sent to" : "Paid to", toBits.join(" · "),
+    to.own ? el("span", { class: "pill", style: { marginLeft: "6px" }, text: "your own account" }) : null)
+  if (to.holder) row("Name on account", to.holder)
+  if (to.location) row("Location", to.location)
+  if (to.via) row("Via", `${to.via}${d.type && /qris/i.test(d.type) ? " (QRIS)" : ""}`)
+  if (to.kind) row("Paid with", to.kind)
+  // Money
+  if (d.amount != null && (d.fee || d.amount !== d.total)) row("Amount", rp(d.amount))
+  if (d.fee) row("Fee", rp(d.fee))
+  if (d.total != null) row("Total", el("b", { text: rp(d.total) }))
+  if (d.type && d.type !== tx.description) row("Type", d.type)
+  row("Status", d.status)
+  row("Bank time", d.when)
+  if (d.purpose) row("Purpose", d.purpose)
+  if (d.note) row("Note on transfer", d.note)
+  for (const [k, v] of Object.entries(d.refs || {})) row(k, el("span", { class: "mono", text: v }))
+  row("Sent by", d.channel)
+  const card = el("div", { class: "card bank-card" }, el("div", { class: "bank-head" }, el("span", { class: `bank-badge ${(d.bank || "").toLowerCase()}`, text: d.bank || "Bank" }), el("b", { text: "Bank details" })),
+    el("dl", { class: "kv" }, ...rows))
+  if ((d.all || []).length) {
+    const all = el("dl", { class: "kv small", hidden: true }, ...d.all.flatMap(([k, v]) => v ? [el("dt", { text: k }), el("dd", { text: v })] : [el("dd", { class: "full", text: k })]))
+    const t = el("button", { class: "link-btn small", type: "button", text: "Every line from the email" })
+    t.onclick = () => { all.hidden = !all.hidden }
+    card.append(t, all)
+  }
+  return card
 }

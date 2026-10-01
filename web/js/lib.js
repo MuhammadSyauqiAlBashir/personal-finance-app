@@ -163,6 +163,9 @@ export class ApiError extends Error {
 
 let onAuthProblem = () => {}
 export const setAuthHandler = (fn) => { onAuthProblem = fn }
+// Requests that hit the Face ID lock wait here and are sent again once the person unlocks.
+let unlockWaiters = []
+export function resumeAfterUnlock() { const w = unlockWaiters; unlockWaiters = []; w.forEach((r) => r()) }
 
 // After the app has been asleep a long time, iOS often reuses a connection the
 // server already closed, so the first request fails. Retry quickly before
@@ -189,6 +192,12 @@ export async function api(path, { method = "GET", json, body, quiet = false } = 
   const res = await fetchRetry("/api" + path, opts, method === "GET" ? 3 : 1)  // never repeat a save
   let data = {}
   try { data = await res.json() } catch (_) {}
+  if (res.status === 423 && !quiet && !arguments[1]?._retried) {
+    // Locked before the server did anything (safe to resend): show Face ID, then send the same request again.
+    onAuthProblem(423, data)
+    await new Promise((r) => unlockWaiters.push(r))
+    return api(path, { method, json, body, quiet, _retried: true })
+  }
   if ((res.status === 401 || res.status === 423 || res.status === 403) && !quiet) onAuthProblem(res.status, data)
   if (!res.ok) throw new ApiError(res.status, data.error || `Something went wrong (${res.status}).`, data)
   return data

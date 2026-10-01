@@ -261,6 +261,13 @@ async def passkey_auth_verify(body: CredentialIn, user: User = Depends(signed_in
     return {"ok": True}
 
 
+@router.post("/alive")
+async def alive(user: User = Depends(member)):
+    """Heartbeat while the person is actively using the app (typing a long form sends no other requests),
+    so the 5-minute Face ID lock only kicks in when they're really away."""
+    return {"ok": True}
+
+
 @router.post("/lock")
 async def lock_now(user: User = Depends(signed_in)):
     if await user_passkeys(user.id):

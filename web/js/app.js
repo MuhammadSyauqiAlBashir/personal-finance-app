@@ -1,4 +1,4 @@
-import { $, $$, api, el, fetchRetry, icon, setAuthHandler } from "./lib.js?v=__VERSION__"
+import { $, $$, api, el, fetchRetry, icon, resumeAfterUnlock, setAuthHandler } from "./lib.js?v=__VERSION__"
 import { renderHome } from "./home.js?v=__VERSION__"
 import { renderInbox, openTransaction } from "./inbox.js?v=__VERSION__"
 import { renderWallets } from "./wallets.js?v=__VERSION__"
@@ -27,6 +27,8 @@ const ROUTES = {
 let rendering = 0
 export async function route() {
   if (!state.me || state.locked) return
+  const pg = document.getElementById("page")
+  if (pg) pg.scrollTop = 0
   const hash = location.hash.replace(/^#/, "") || "home"
   const [name, arg, arg2] = hash.split("/")
   if (name === "setup") { show("setupView"); return renderSetup($("#setupView"), arg) }
@@ -150,7 +152,9 @@ async function unlockWithPasskey() {
 
 function renderLock() {
   state.locked = true
-  show("lockView")
+  // If the app (or setup) is open, lock on top of it so nothing typed is lost; otherwise show the lock page.
+  const overlay = !$("#appView").hidden || !$("#setupView").hidden
+  if (overlay) { $("#lockView").classList.add("lock-overlay"); $("#lockView").hidden = false } else { $("#lockView").classList.remove("lock-overlay"); show("lockView") }
   const msg = el("p", { class: "form-msg", role: "alert" })
   const btn = el("button", { class: "btn primary wide", type: "button" }, icon("face"), "Unlock with Face ID")
   const tryUnlock = async () => {
@@ -159,7 +163,8 @@ function renderLock() {
     try {
       await unlockWithPasskey()
       state.locked = false
-      await afterLogin()
+      if (overlay) { $("#lockView").hidden = true; $("#lockView").classList.remove("lock-overlay"); resumeAfterUnlock() }
+      else await afterLogin()
     } catch (err) {
       msg.textContent = err.name === "NotAllowedError" ? "Face ID was cancelled. Try again." : err.message
     } finally {
@@ -173,6 +178,22 @@ function renderLock() {
     el("h2", { text: "Locked" }), el("p", { class: "muted", style: { margin: "6px 0 18px" }, text: "Your finances are protected. Unlock to continue." }),
     btn, msg, logout))
 }
+
+// No pinch / double-tap zoom (iOS ignores user-scalable=no in some cases), and keep the page itself from drifting
+// after the keyboard closes (that's what lifted the tab bar).
+for (const t of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(t, (e) => e.preventDefault(), { passive: false })
+document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault() }, { passive: false })
+const settle = () => { if (window.scrollY || window.scrollX) window.scrollTo(0, 0) }
+window.visualViewport && window.visualViewport.addEventListener("resize", () => setTimeout(settle, 60))
+document.addEventListener("focusout", () => setTimeout(settle, 120))
+window.addEventListener("hashchange", settle)
+
+// While someone is actively typing/tapping, tell the server once a minute so a long form doesn't lock mid-way.
+let lastInput = Date.now()
+for (const ev of ["keydown", "input", "pointerdown", "touchstart", "scroll"]) document.addEventListener(ev, () => { lastInput = Date.now() }, { passive: true, capture: true })
+setInterval(() => {
+  if (state.me && !state.locked && !document.hidden && Date.now() - lastInput < 4 * 60 * 1000) api("/alive", { method: "POST", quiet: true }).catch(() => {})
+}, 60 * 1000)
 
 // Lock right away when the app goes to the background for a while.
 let hiddenAt = 0
