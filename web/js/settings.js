@@ -34,7 +34,7 @@ export async function renderSettings(page) {
           renderSettings(page)
         } catch (err) { toast(err.message, "bad") }
       }),
-      item("face", "Face ID lock", pk.passkeys.length ? `${pk.passkeys.length} passkey${pk.passkeys.length === 1 ? "" : "s"}. Asks after 5 min away` : "Off. Tap to set up", () => passkeySheet(pk.passkeys, page)),
+      item("face", "Face ID lock", pk.passkeys.length ? `${pk.passkeys.length} passkey${pk.passkeys.length === 1 ? "" : "s"}. Asks after 1 hour away` : "Off. Tap to set up", () => passkeySheet(pk.passkeys, page)),
       item("lock", "Lock now", null, async () => { await api("/lock", { method: "POST" }); location.reload() })),
     el("div", { class: "section-head section" }, el("h2", { text: "Data" })),
     el("div", { class: "list" },
@@ -242,7 +242,7 @@ function passkeySheet(keys, page) {
     catch (err) { msg.textContent = err.name === "NotAllowedError" ? "Cancelled." : err.name === "InvalidStateError" ? "This device is already set up." : err.message }
   })
   sh.body.append(el("p", { class: "muted", style: { marginBottom: "12px" },
-    text: "After 5 minutes away, the app (and the server) stays locked until Face ID confirms it's you. Uses a passkey stored in your iCloud Keychain." }),
+    text: "After 1 hour away, the app (and the server) stays locked until Face ID confirms it's you. Uses a passkey stored in your iCloud Keychain." }),
     el("div", { class: "list" }, keys.map((k) => {
       const rm = el("button", { class: "btn small danger", type: "button", text: "Remove" })
       armed(rm, "Sure?", async () => { await api(`/passkeys/${k.id}`, { method: "DELETE" }); sh.close(); renderSettings(page) })
