@@ -1,0 +1,38 @@
+[Unit]
+Description=Daily backup of the shared PocketBase into one zip (saved to the finance Google Drive by the Apps Script)
+After=pocketbase.service
+
+[Service]
+Type=oneshot
+# Owner of the database files (it only reads them); the zips get group `finance` so the finance app can serve them.
+User=pocketbase
+Group=finance
+UMask=0027
+ExecStart=/usr/bin/python3 /usr/local/lib/pb-backup/pb-backup.py
+Nice=10
+IOSchedulingClass=idle
+MemoryMax=300M
+
+# Sandbox. pb_data must be writable only for SQLite's shared-memory read lock (-shm); the script opens it read-only.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/backups/pocketbase /var/lib/pocketbase/pb_data
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+PrivateNetwork=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=

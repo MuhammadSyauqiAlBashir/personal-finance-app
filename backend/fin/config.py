@@ -34,3 +34,8 @@ LOCK_IDLE_SECONDS = int(os.environ.get("FIN_LOCK_IDLE_SECONDS", "300"))
 # State the backend writes itself (Drive refresh token). Kept outside PocketBase
 # so a database leak doesn't include it.
 STATE_DIR = os.environ.get("FIN_STATE_DIR", "/var/lib/finance")
+
+# Daily PocketBase backups (deploy/pb-backup.py) waiting for the Apps Script to save them in Drive, and who gets a
+# push if none reached Drive for 2 days.
+BACKUP_DIR = os.environ.get("FIN_BACKUP_DIR", "/var/backups/pocketbase")
+BACKUP_ALERT_USERS = [u for u in os.environ.get("FIN_BACKUP_ALERT_USERS", "bashirsyauqi").split(",") if u.strip()]

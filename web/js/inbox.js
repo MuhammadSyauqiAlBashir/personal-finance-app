@@ -42,6 +42,9 @@ const GROUP_NAME = { must: "Must spend", needs: "Needs", wants: "Wants", savings
 // ---------------------------------------------------------------------------
 let listStatus = "pending"
 let search = ""
+// Select mode (To confirm tab): tick several transactions and confirm them together.
+let selecting = false
+const picked = new Map() // id -> transaction
 
 export async function renderInbox(page, arg, _arg2, { quiet = false } = {}) {
   if (arg === "all" || arg === "ignored" || arg === "failed") listStatus = arg === "all" ? "confirmed" : arg
@@ -50,21 +53,30 @@ export async function renderInbox(page, arg, _arg2, { quiet = false } = {}) {
   // quiet: refresh in place after a sheet closes. Fetch first and swap in one go (no skeleton), so the list keeps
   // its scroll position.
   const early = quiet ? await api(query) : null
+  const refresh = () => renderInbox(page, null, null, { quiet: true })
+  if (listStatus !== "pending") selecting = false
   const seg = el("div", { class: "segmented" })
   for (const [key, label] of [["pending", "To confirm"], ["confirmed", "Confirmed"], ["ignored", "Ignored"], ["failed", "Failed"]]) {
     seg.append(el("button", { type: "button", "aria-pressed": String(listStatus === key), text: label,
       onclick: () => { listStatus = key; renderInbox(page) } }))
   }
+  const selectBtn = el("button", { class: "link-btn", type: "button", hidden: true, text: selecting ? "Cancel" : "Select",
+    onclick: () => { selecting = !selecting; picked.clear(); refresh() } })
   const searchBox = el("input", { type: "search", placeholder: "Search merchant or note", value: search, enterkeyhint: "search" })
   searchBox.addEventListener("change", () => { search = searchBox.value; renderInbox(page) })
   const listWrap = el("div", {}, quiet ? null : el("div", { class: "skeleton", style: { height: "220px", marginTop: "14px" } }))
   page.replaceChildren(
     el("div", { class: "topbar" }, el("div", {}, el("h1", { text: "Inbox" }),
-      el("div", { class: "sub", text: "Bank emails, receipts and quick adds land here." }))),
+      el("div", { class: "sub", text: selecting ? "Tick the ones to confirm together." : "Bank emails, receipts and quick adds land here." })), selectBtn),
     seg, listStatus !== "pending" ? el("div", { style: { marginTop: "10px" } }, searchBox) : null, listWrap)
-  page.append(el("button", { class: "fab", type: "button", "aria-label": "Add a transaction", onclick: () => quickAdd() }, icon("plus")))
+  if (!selecting) page.append(el("button", { class: "fab", type: "button", "aria-label": "Add a transaction", onclick: () => quickAdd() }, icon("plus")))
 
   const data = early || await api(query)
+  const canBatch = listStatus === "pending" && data.items.filter(batchable).length >= 2
+  selectBtn.hidden = !canBatch && !selecting
+  if (!canBatch) selecting = false
+  // Keep ticks that are still in the list (after a refresh), with their fresh data.
+  for (const id of [...picked.keys()]) { const t = data.items.find((x) => x.id === id && batchable(x)); if (t) picked.set(id, t); else picked.delete(id) }
   listWrap.replaceChildren()
   if (!data.items.length) {
     listWrap.append(el("div", { class: "empty-state" }, el("div", { class: "big", text: listStatus === "pending" ? "🎉" : "🗂️" }),
@@ -82,8 +94,122 @@ export async function renderInbox(page, arg, _arg2, { quiet = false } = {}) {
       list = el("div", { class: "list" })
       listWrap.append(list)
     }
-    list.append(txRow(tx, () => openTransaction(tx.id, () => renderInbox(page, null, null, { quiet: true }))))
+    if (!selecting) { list.append(txRow(tx, () => openTransaction(tx.id, refresh))); continue }
+    const ok = batchable(tx)
+    const row = txRow(tx, () => {
+      if (!ok) { toast("Open this one by itself: it needs a check, a split or its own steps."); return }
+      if (picked.has(tx.id)) picked.delete(tx.id); else picked.set(tx.id, tx)
+      mark()
+      updateBar()
+    })
+    const mark = () => { row.classList.toggle("picked", picked.has(tx.id)); row.setAttribute("aria-pressed", String(picked.has(tx.id))) }
+    row.classList.add(ok ? "pickable" : "no-pick")
+    row.prepend(el("span", { class: "sel-check" }, icon("check")))
+    mark()
+    list.append(row)
   }
+  if (!selecting) return
+  // Bottom bar: count + total, select all, confirm.
+  const info = el("div", { class: "grow" })
+  const all = el("button", { class: "link-btn small", type: "button" })
+  const go = el("button", { class: "btn primary", type: "button" })
+  const updateBar = () => {
+    const n = picked.size, total = [...picked.values()].reduce((a, t) => a + t.amount, 0)
+    info.replaceChildren(el("b", { text: `${n} selected` }), el("div", { class: "muted small", text: n ? rp(total) : "Tap to tick" }))
+    const every = data.items.filter(batchable)
+    all.textContent = picked.size === every.length ? "Clear" : "All"
+    all.onclick = () => {
+      if (picked.size === every.length) picked.clear(); else for (const t of every) picked.set(t.id, t)
+      refresh()
+    }
+    go.textContent = n ? `Confirm ${n}` : "Confirm"
+    go.disabled = !n
+  }
+  go.onclick = () => confirmMany([...picked.values()], () => { picked.clear(); selecting = false; refresh() })
+  updateBar()
+  listWrap.append(el("div", { class: "select-bar" }, info, all, go))
+}
+
+// ---------------------------------------------------------------------------
+// Confirm several at once: one wallet, one no-receipt reason and one note for all of them
+// ---------------------------------------------------------------------------
+// Only plain spending with nothing to check can go in a batch; the rest needs its own sheet.
+function batchable(tx) {
+  const f = tx.flags || {}
+  const rec = (tx.receipts || [])[0]
+  return tx.status === "pending" && tx.kind === "expense" && !f.possible_duplicate_of && !f.amount_check && !f.exceeds_topup &&
+    !(rec && rec.match && rec.match.overall === "mismatch") && (tx.splits || []).length <= 1
+}
+
+function confirmMany(txs, onDone) {
+  let confirmed = 0
+  const sh = sheet(`Confirm ${txs.length} transactions`, { tall: true, key: "batch", onClose: () => { refreshBadge(); if (confirmed) onDone() } })
+  if (!sh) return
+  const total = txs.reduce((a, t) => a + t.amount, 0)
+  const items = el("div", { class: "list" }, txs.map((t) => el("div", { class: "list-item" },
+    el("div", { class: "li-main" }, el("div", { class: "li-title", text: t.merchant || t.description || "Transaction" }),
+      el("div", { class: "li-sub", text: [t.account, fmtDay(t.occurred_at), fmtTime(t.occurred_at)].filter(Boolean).join(" · ") })),
+    el("div", { class: "li-amount", text: rp(t.amount) }))))
+
+  // Wallet: the shared AI suggestion if they all agree; "each one's suggestion" if they all have one but differ.
+  const suggested = txs.map((t) => (t.ai || {}).category || "").map((c) => (catById(c) ? c : ""))
+  const same = suggested.every((c) => c && c === suggested[0])
+  const wallet = categorySelect(same ? suggested[0] : "")
+  if (!same && suggested.every(Boolean)) {
+    wallet.firstChild.after(el("option", { value: "*", text: "✨ Each one's suggested wallet" }))
+    wallet.value = "*"
+  }
+
+  const missing = txs.filter((t) => t.receipt_state === "missing")
+  let reason = ""
+  const other = el("input", { placeholder: "Reason", maxlength: 200, hidden: true })
+  const chips = el("div", { class: "reason-chips" }, REASONS.map((r) => el("button", { class: "chip", type: "button", text: r, onclick: (e) => {
+    for (const c of chips.children) c.classList.toggle("on", c === e.currentTarget)
+    other.hidden = r !== "Other"
+    reason = r === "Other" ? other.value.trim() : r
+  } })))
+  other.addEventListener("input", () => { reason = other.value.trim() })
+  const note = el("textarea", { maxlength: 1000, rows: 2, placeholder: "Optional, added to each one" })
+  const msg = el("div", { class: "form-msg", role: "alert" })
+  const label = el("span", { text: `Confirm ${txs.length}` })
+  const go = el("button", { class: "btn primary wide", type: "button" }, icon("check"), label)
+  go.onclick = () => busy(go, async () => {
+    msg.replaceChildren()
+    if (!wallet.value) { msg.textContent = "Choose a wallet."; return }
+    if (missing.length && !reason) { msg.textContent = "Choose why there's no receipt."; return }
+    const failed = []
+    let already = 0
+    for (const [i, t] of txs.entries()) {
+      label.textContent = `Confirming ${i + 1} of ${txs.length}…`
+      const category = wallet.value === "*" ? t.ai.category : wallet.value
+      try {
+        await api(`/transactions/${t.id}/confirm`, { method: "POST", json: { splits: [{ category, amount: t.amount }],
+          waive_reason: t.receipt_state === "missing" ? reason : "", note: note.value.trim() || undefined } })
+        confirmed++
+        clearDraft(t.id)
+      } catch (err) {
+        if (err.status === 409) { already++; confirmed++; clearDraft(t.id) } else failed.push({ t, error: err.message })
+      }
+    }
+    if (!failed.length) {
+      toast(already ? `Confirmed ${confirmed - already}; ${already} already were` : `Confirmed ${confirmed}`, "good")
+      sh.close()
+      return
+    }
+    label.textContent = "Try the rest again"
+    msg.replaceChildren(el("p", { text: `Confirmed ${confirmed}. These need a look (or open them one by one):` }),
+      ...failed.map((f) => el("p", { text: `• ${f.t.merchant || "Transaction"} ${rp(f.t.amount)}: ${f.error}` })))
+    txs = failed.map((f) => f.t)
+  })
+
+  sh.body.append(
+    el("p", { class: "muted", style: { marginBottom: "12px" }, text: `${txs.length} transactions · ${rp(total)}. Each one stays its own transaction with its exact bank amount.` }),
+    items,
+    el("div", { class: "card", style: { marginTop: "12px" } }, el("div", { class: "card-title", text: "Wallet for all" }), wallet),
+    missing.length ? el("div", { class: "card" }, el("div", { class: "card-title", text: "Receipt" }),
+      el("p", { class: "muted small", text: missing.length === txs.length ? "None of these has a receipt. Why?" : `${missing.length} of these ${missing.length === 1 ? "has" : "have"} no receipt. Why?` }), chips, other) : null,
+    el("div", { class: "card" }, el("div", { class: "card-title", text: "Note (optional)" }), note),
+    el("div", { class: "sticky-actions" }, msg, go))
 }
 
 function txIcon(tx) {

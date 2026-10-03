@@ -1,7 +1,8 @@
 import { api, el, fmtDate, greeting, icon, markdown, rp, rpFit, todayKey } from "./lib.js?v=__VERSION__"
 import { meter, ring } from "./charts.js?v=__VERSION__"
-import { go, state } from "./app.js?v=__VERSION__"
+import { go, route, state } from "./app.js?v=__VERSION__"
 import { quickAdd } from "./inbox.js?v=__VERSION__"
+import { billsSheet, goalsSheet, incomeSheet, moveSheet, planSheet } from "./wallets.js?v=__VERSION__"
 
 export async function renderHome(page) {
   const [s, goals, bills] = await Promise.all([api("/summary"), api("/goals"), api("/bills")])
@@ -23,11 +24,25 @@ export async function renderHome(page) {
     el("div", { class: "ring-wrap" }, ring(fraction, `${elapsed} of ${s.days_total} days`),
       el("div", { class: "ring-text" }, el("span", {}, el("b", { text: String(s.days_left) }), "days left"))))
 
-  const tiles = el("div", { class: "tiles" },
-    el("div", { class: "tile", title: rp(s.income) }, el("div", { class: "tile-label", text: "Income" }), el("div", { class: "tile-value", text: rpFit(s.income) })),
-    el("div", { class: "tile", title: rp(s.spent) }, el("div", { class: "tile-label", text: "Spent" }), el("div", { class: "tile-value", text: rpFit(s.spent) })),
-    el("div", { class: `tile${s.to_assign ? " alert" : ""}`, title: rp(Math.abs(s.to_assign)) }, el("div", { class: "tile-label", text: s.to_assign < 0 ? "Over-assigned" : "To assign" }),
-      el("div", { class: "tile-value", text: rpFit(Math.abs(s.to_assign)) })))
+  // Remaining = income minus everything spent or saved from the wallets this month. "To assign" only shows while
+  // there's something to fix (the banner below explains it too).
+  const remaining = s.income - s.spent
+  const tile = (label, value, alert = false) => el("div", { class: `tile${alert ? " alert" : ""}`, title: rp(value) },
+    el("div", { class: "tile-label", text: label }), el("div", { class: "tile-value", text: rpFit(value) }))
+  const tiles = el("div", { class: `tiles${s.to_assign ? " four" : ""}` },
+    tile("Income", s.income), tile("Spent", s.spent),
+    tile(remaining < 0 ? "Over by" : "Remaining", Math.abs(remaining), remaining < 0),
+    s.to_assign ? tile(s.to_assign < 0 ? "Over-assigned" : "To assign", Math.abs(s.to_assign), true) : null)
+
+  // Shortcuts to the month's money tools (same sheets as on the Wallets tab). A dot marks one that needs attention.
+  const today = todayKey()
+  const dueSoon = bills.bills.filter((b) => b.active && !b.paid && b.due_day && daysUntilDue(b.due_day, today) <= 3)
+  const shortcuts = el("nav", { class: "card quick", "aria-label": "Money tools" },
+    shortcut("wallet", "Plan", () => planSheet(s), s.income && s.to_assign !== 0),
+    shortcut("calendar", "Income", () => incomeSheet(s), !s.income),
+    shortcut("move", "Move", () => moveSheet(s)),
+    shortcut("receipt", "Bills", () => billsSheet({ onClose: route }), dueSoon.length > 0),
+    shortcut("target", "Goals", () => goalsSheet({ onClose: route })))
 
   const alerts = []
   if (!s.income) {
@@ -46,8 +61,6 @@ export async function renderHome(page) {
     alerts.push(banner("danger", "alert", `${over.length} wallet${over.length === 1 ? " is" : "s are"} overspent`,
       over.map((w) => w.category.name).join(", ") + ". Move money to cover it.", () => go("wallets")))
   }
-  const today = todayKey()
-  const dueSoon = bills.bills.filter((b) => b.active && !b.paid && b.due_day && daysUntilDue(b.due_day, today) <= 3)
   if (dueSoon.length) {
     alerts.push(banner("warn", "calendar", `${dueSoon.length} bill${dueSoon.length === 1 ? "" : "s"} due soon`,
       dueSoon.map((b) => `${b.name} (${rp(b.amount)})`).join(", "), () => go("wallets/bills")))
@@ -72,7 +85,7 @@ export async function renderHome(page) {
   const demo = s.demo ? el("div", { class: "banner demo" }, icon("alert"), el("div", { class: "grow" },
     el("div", { class: "banner-title", text: "This month is demo data" }),
     el("div", { class: "banner-sub", text: "A preview so you can see the reports. Real tracking starts on the 1st; the advisor ignores the demo." }))) : null
-  page.replaceChildren(top, demo, hero, tiles, ...alerts,
+  page.replaceChildren(top, demo, hero, tiles, shortcuts, ...alerts,
     el("div", { class: "section" },
       el("div", { class: "section-head" }, el("h2", { text: "Wallets" }), el("a", { class: "link-btn", href: "#wallets", text: "All" })),
       walletList),
@@ -101,6 +114,11 @@ function daysUntilDue(day, todayStr) {
   const today = new Date(Date.UTC(y, m, t.getUTCDate()))
   if (due < today) due = new Date(Date.UTC(y, m + 1, Math.min(day, last(y, m + 1))))
   return Math.round((due - today) / 86400000)
+}
+
+function shortcut(ic, label, onclick, dot = false) {
+  return el("button", { type: "button", onclick, "aria-label": dot ? `${label} (needs attention)` : label },
+    el("span", { class: "q-ico" }, icon(ic), dot ? el("i", { class: "q-dot" }) : null), el("span", { text: label }))
 }
 
 function banner(kind, ic, title, sub, onclick) {

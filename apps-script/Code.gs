@@ -7,6 +7,10 @@
  *     the server, and once accepted moves the thread to "processed".
  *  2. Saves receipt photos of confirmed transactions into this account's
  *     Drive: "Financial Management/Receipts/<YYYY-MM>/".
+ *  3. Saves the server's daily database backup (made at 01:00) into
+ *     "Financial Management/Backups/" and moves backup files older than
+ *     28 days to the Drive trash. Only files named
+ *     pocketbase-backup-YYYY-MM-DD.zip in that folder are ever trashed.
  *
  * Every request is signed with INGEST_SECRET (HMAC-SHA256).
  *
@@ -26,6 +30,7 @@ function run() {
   if (!secret) throw new Error('Missing INGEST_SECRET in Project Settings > Script Properties.');
   sendEmails_(secret);
   saveReceipts_(secret);
+  saveBackups_(secret);
 }
 
 function sendEmails_(secret) {
@@ -125,6 +130,46 @@ function saveReceipts_(secret) {
     var done = post_('/api/ingest/receipts/' + item.id + '/done', { drive_file_id: file.getId() }, secret);
     if (done.getResponseCode() !== 200) console.error('Receipt ' + item.id + ' not marked: ' + done.getContentText());
   });
+}
+
+var BACKUP_NAME = /^pocketbase-backup-(\d{4})-(\d{2})-(\d{2})\.zip$/;
+
+function saveBackups_(secret) {
+  var res = get_('/api/ingest/backups', secret);
+  if (res.getResponseCode() !== 200) {
+    console.error('Backup list failed ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 300));
+    return;
+  }
+  var data = JSON.parse(res.getContentText());
+  var folder = childFolder_(childFolder_(DriveApp.getRootFolder(), ROOT_FOLDER), 'Backups');
+  (data.items || []).forEach(function (item) {
+    var file = get_('/api/ingest/backups/' + item.name, secret);
+    if (file.getResponseCode() !== 200) {
+      console.error('Backup ' + item.name + ' download failed: ' + file.getResponseCode());
+      return;
+    }
+    var blob = file.getBlob().setName(item.name).setContentType('application/zip');
+    var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, blob.getBytes())
+      .map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
+    if (digest !== item.sha256) {
+      console.error('Backup ' + item.name + ' arrived damaged (checksum differs); will try again.');
+      return;
+    }
+    var old = folder.getFilesByName(item.name);  // a retry after a half-finished run: replace it
+    while (old.hasNext()) old.next().setTrashed(true);
+    var saved = folder.createFile(blob);
+    var done = post_('/api/ingest/backups/' + item.name + '/done', { drive_file_id: saved.getId() }, secret);
+    if (done.getResponseCode() !== 200) console.error('Backup ' + item.name + ' not marked: ' + done.getContentText());
+  });
+  // Keep the last <keep_days> days in Drive; older backup zips go to the trash (Google empties it after 30 days).
+  var keep = data.keep_days || 28;
+  var cutoff = new Date(Date.now() - keep * 86400000);
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var f = files.next();
+    var m = BACKUP_NAME.exec(f.getName());
+    if (m && new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) < cutoff) f.setTrashed(true);
+  }
 }
 
 // Run once: creates the 5-minute trigger (and removes old ones).

@@ -15,13 +15,14 @@ import logging
 import time
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
-from fastapi.responses import Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from . import config
+from . import backups, config
 from .pb import PBError, pb, q
 from .redact import redact
+from .security import User, member
 
 log = logging.getLogger("fin.ingest")
 router = APIRouter()
@@ -175,3 +176,34 @@ async def receipts_done(rid: str, request: Request):
     done = DriveDone.model_validate(json.loads(body))
     await pb.update("fin_receipts", receipt_id(rid), {"drive_file_id": done.drive_file_id, "drive_state": "uploaded"})
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Daily database backups -> Drive (see backups.py)
+# ---------------------------------------------------------------------------
+@router.get("/api/ingest/backups")
+async def backups_queue(request: Request):
+    verify_request(request, b"")
+    return {"items": backups.queue(), "keep_days": backups.DRIVE_KEEP_DAYS}
+
+
+@router.get("/api/ingest/backups/{name}")
+async def backups_file(name: str, request: Request):
+    verify_request(request, b"")
+    return FileResponse(backups.path_for(name), media_type="application/zip", filename=name)
+
+
+@router.post("/api/ingest/backups/{name}/done")
+async def backups_done(name: str, request: Request):
+    body = await request.body()
+    verify_request(request, body)
+    done = DriveDone.model_validate(json.loads(body))
+    backups.path_for(name)
+    backups.mark_uploaded(name, done.drive_file_id)
+    log.info("backup %s saved in Drive", name)
+    return {"ok": True}
+
+
+@router.get("/api/backups/status")
+async def backups_status(user: User = Depends(member)):
+    return backups.status()

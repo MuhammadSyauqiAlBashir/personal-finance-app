@@ -39,6 +39,7 @@ export async function renderSettings(page) {
     el("div", { class: "section-head section" }, el("h2", { text: "Data" })),
     el("div", { class: "list" },
       item("mail", "Bank emails", "What arrived and how it was read", () => emailSheet()),
+      backupItem(),
       item("🧭", "Setup guide", "Run the first-time setup again", () => go("setup")),
       demoItem(page)),
     el("div", { class: "section" }, (() => {
@@ -46,6 +47,18 @@ export async function renderSettings(page) {
       b.onclick = async () => { await api("/logout", { method: "POST" }).catch(() => {}); location.hash = ""; location.reload() }
       return b
     })()))
+}
+
+// Daily database backup (01:00) saved by the Gmail Apps Script into the finance Google Drive.
+function backupItem() {
+  const sub = el("div", { class: "li-sub", text: "Checking…" })
+  const row = el("div", { class: "list-item" }, el("div", { class: "li-icon", text: "🗄️" }),
+    el("div", { class: "li-main" }, el("div", { class: "li-title", text: "Backups" }), sub))
+  api("/backups/status").then((b) => {
+    const last = b.last ? `Last in Drive: ${fmtDate(b.last.name.slice(18, 28))}, ${relTime(b.last.at)}` : "None in Drive yet"
+    sub.textContent = `${last}${b.waiting ? ` · ${b.waiting} waiting` : ""} · daily at 01:00, ${b.drive_keep_days} days kept`
+  }).catch(() => { sub.textContent = "Status unavailable" })
+  return row
 }
 
 function demoItem(page) {

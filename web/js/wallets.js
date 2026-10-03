@@ -84,7 +84,7 @@ async function walletSheet(w, s) {
 // ---------------------------------------------------------------------------
 // Income
 // ---------------------------------------------------------------------------
-function incomeSheet(s) {
+export function incomeSheet(s) {
   const sh = sheet("Income this month")
   const list = el("div", { class: "list" }, s.incomes.length ? s.incomes.map((i) => {
     const del = el("button", { class: "icon-btn", type: "button", "aria-label": "Remove" }, icon("trash"))
@@ -184,7 +184,7 @@ export async function planSheet(s, { onSaved } = {}) {
 // ---------------------------------------------------------------------------
 // Move money between wallets
 // ---------------------------------------------------------------------------
-function moveSheet(s, toId = "", amountDefault = 0) {
+export function moveSheet(s, toId = "", amountDefault = 0) {
   const sh = sheet("Move money")
   const opts = (sel) => {
     for (const [g, label] of GROUPS) {
@@ -219,8 +219,8 @@ function moveSheet(s, toId = "", amountDefault = 0) {
 // ---------------------------------------------------------------------------
 // Bills (must spend)
 // ---------------------------------------------------------------------------
-export async function billsSheet() {
-  const sh = sheet("Must-spend bills", { tall: true })
+export async function billsSheet({ onClose } = {}) {
+  const sh = sheet("Must-spend bills", { tall: true, onClose })
   const render = async () => {
     const [{ bills }, { categories }] = await Promise.all([api("/bills"), api("/categories")])
     const list = el("div", { class: "list" }, bills.length ? bills.map((b) => {
@@ -273,8 +273,8 @@ function billForm(b, categories, done) {
 // ---------------------------------------------------------------------------
 // Goals
 // ---------------------------------------------------------------------------
-export async function goalsSheet() {
-  const sh = sheet("Goals", { tall: true })
+export async function goalsSheet({ onClose } = {}) {
+  const sh = sheet("Goals", { tall: true, onClose })
   const render = async () => {
     const [{ goals }, fc] = await Promise.all([api("/goals"), api("/reports/forecast").catch(() => ({ goals: [] }))])
     const eta = Object.fromEntries((fc.goals || []).map((g) => [g.id, g]))

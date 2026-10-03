@@ -33,10 +33,17 @@ echo "==> pocketbase migrations + hooks"
 sudo install -C -o pocketbase -g pocketbase -m 640 pb_migrations/*.js /var/lib/pocketbase/pb_migrations/
 sudo install -C -o pocketbase -g pocketbase -m 640 pb_hooks/*.js /var/lib/pocketbase/pb_hooks/
 
+echo "==> daily database backup (01:00 -> /var/backups/pocketbase -> Apps Script -> Drive)"
+sudo install -d -o pocketbase -g finance -m 2750 /var/backups/pocketbase
+sudo install -d -o root -g root -m 755 /usr/local/lib/pb-backup
+sudo install -o root -g root -m 755 deploy/pb-backup.py /usr/local/lib/pb-backup/pb-backup.py
+sudo install -o root -g root -m 644 deploy/pb-backup.service deploy/pb-backup.timer /etc/systemd/system/
+
 echo "==> restart"
 sudo systemctl daemon-reload
 if [ "${SKIP_PB_RESTART:-0}" != 1 ]; then sudo systemctl restart pocketbase; sleep 2; fi
 sudo systemctl enable --quiet finance
+sudo systemctl enable --quiet --now pb-backup.timer
 sudo systemctl restart finance
 for i in $(seq 30); do curl -fsS http://127.0.0.1:8100/api/health >/dev/null 2>&1 && break; sleep 1; done
 curl -fsS http://127.0.0.1:8100/api/health && echo

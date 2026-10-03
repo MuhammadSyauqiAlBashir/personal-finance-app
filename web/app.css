@@ -135,7 +135,15 @@ p { margin: 0; }
 .tile-value { font: 700 18px/1.2 var(--font-display); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile.alert { border-color: rgba(250, 178, 25, 0.45); }
 .tile.alert .tile-value { color: var(--warning-ink); }
-@media (max-width: 380px) { .tiles { grid-template-columns: 1fr 1fr; } .hero-value { font-size: 38px; } }
+.tiles.four { grid-template-columns: 1fr 1fr; }
+@media (max-width: 380px) { .tiles { grid-template-columns: 1fr 1fr; } .tiles:not(.four) .tile:last-child { grid-column: 1 / -1; } .hero-value { font-size: 38px; } }
+
+/* Home shortcuts: Plan · Income · Move · Bills · Goals */
+.quick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin-top: 12px; padding: 12px 6px 10px; }
+.quick button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0; border-radius: 14px; font-size: 12px; font-weight: 600; color: var(--fg-2); min-width: 0; }
+.quick button:active { background: var(--surface-2); }
+.quick .q-ico { position: relative; width: 46px; height: 46px; border-radius: 15px; display: grid; place-items: center; color: var(--accent); background: rgba(52, 211, 153, 0.12); border: 1px solid rgba(52, 211, 153, 0.18); }
+.quick .q-dot { position: absolute; top: -3px; right: -3px; width: 11px; height: 11px; border-radius: 50%; background: var(--warning); border: 2px solid var(--surface); }
 
 .banner {
   display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px;
@@ -226,6 +234,16 @@ input::placeholder, textarea::placeholder { color: var(--faint); }
 .banner.demo .ico { color: #b3aaf2; }
 .li-amount { font-weight: 650; font-variant-numeric: tabular-nums; }
 .li-amount.transfer { color: var(--muted); }
+/* Inbox select mode */
+.sel-check { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line-2); flex: none; display: grid; place-items: center; color: transparent; }
+.sel-check .ico { width: 16px; height: 16px; stroke-width: 3; }
+.list-item.picked { background: rgba(52, 211, 153, 0.07); }
+.list-item.picked .sel-check { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.list-item.no-pick { opacity: 0.45; }
+.list-item.no-pick .sel-check { border-style: dashed; }
+.select-bar { position: sticky; bottom: 10px; z-index: 6; margin-top: 14px; display: flex; align-items: center; gap: 12px; padding: 10px 10px 10px 16px; border-radius: 18px;
+  background: rgba(28, 31, 39, 0.96); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.select-bar .btn { flex: none; }
 .day-head { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 18px 6px 8px; }
 .empty-state { text-align: center; padding: 36px 20px; color: var(--muted); }
 .empty-state .big { font-size: 40px; margin-bottom: 8px; }

@@ -8,7 +8,7 @@ import calendar
 import logging
 from datetime import datetime, timedelta
 
-from . import budget, config, emails, notify, reports
+from . import backups, budget, config, emails, notify, reports
 from .pb import PBError, pb
 
 log = logging.getLogger("fin.scheduler")
@@ -111,10 +111,20 @@ async def job_pending(today: str):
         await notify.pending_reminder()
 
 
+async def job_backup_check(today: str):
+    """Push the owner when no database backup has reached Drive for 2 days (timer, Apps Script or Drive broke)."""
+    days = backups.days_since_last_upload()
+    if days is None or days >= 2:
+        when = "yet" if days is None else f"for {days} days"
+        await notify.send("Backup not in Drive", f"No database backup has reached Google Drive {when}. "
+                          "Check Settings → Backups.", "/#settings", tag="backup-check", users=config.BACKUP_ALERT_USERS)
+
+
 JOBS = [
     # (name, hour, minute, function)
     ("close_periods", 0, 5, job_close_periods),
     ("bills", 9, 0, job_bills),
+    ("backup_check", 9, 5, job_backup_check),
     ("pending", 19, 0, lambda today: job_pending(today)),
     ("pace", 20, 0, job_pace),
     ("daily_report", 21, 0, job_daily_report),
