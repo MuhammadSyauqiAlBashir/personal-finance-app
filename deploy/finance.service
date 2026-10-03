@@ -14,13 +14,13 @@ ExecStart=/opt/finance/venv/bin/uvicorn fin.main:app --app-dir /opt/finance \
   --host 127.0.0.1 --port 8100 --workers 1 \
   --proxy-headers --forwarded-allow-ips 127.0.0.1 \
   --no-server-header --no-access-log
-Restart=on-failure
+Restart=always
 RestartSec=5
 UMask=0077
 StateDirectory=finance
 StateDirectoryMode=0700
 
-# Resource limits (1GB box)
+# Resource limits (2 GB box, shared with PocketBase and the other apps)
 MemoryHigh=200M
 MemoryMax=300M
 TasksMax=64

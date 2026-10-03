@@ -8,12 +8,12 @@ https://financial-management.bashir.my.id. Design and every interview decision: 
 
 | Path | What |
 |---|---|
-| `backend/fin/` | FastAPI app (`finance.service`, 127.0.0.1:8100). `main.py` app + auth, `security.py` sessions + Face ID lock, `ingest.py` signed Apps Script endpoints (emails in, receipts out to Drive), `parsers.py` BCA/Mandiri rules, `emails.py` pipeline + Gemini fallback, `budget.py` cycles/wallets/sweep/demo, `routes_*.py` API, `receipts.py`, `categorize.py`, `advisor.py`, `reports.py`, `notify.py` Web Push, `scheduler.py` daily jobs, `ai.py` Gemini client |
+| `backend/fin/` | FastAPI app (`finance.service`, 127.0.0.1:8100). `main.py` app + auth, `security.py` sessions + Face ID lock, `ingest.py` signed Apps Script endpoints (emails in, receipts out to Drive), `parsers.py` BCA/Mandiri rules, `redact.py` masks account/card numbers before storing or sending to Gemini, `emails.py` pipeline + Gemini fallback, `details.py` read-time "Bank details" card (from/to/fee/refs) for the Inbox, `budget.py` cycles/wallets/sweep/demo, `routes_*.py` API, `receipts.py`, `drive.py` receipts queue for the Apps Script Drive upload, `categorize.py`, `advisor.py`, `reports.py`, `notify.py` Web Push, `scheduler.py` daily jobs, `ai.py` Gemini client |
 | `web/` | Static PWA served by Caddy (`/srv/finance`): plain ES modules in `web/js/`, hand-drawn SVG charts (`charts.js`), service worker for offline shell + push |
 | `pb_migrations/`, `pb_hooks/` | PocketBase schema (`fin_*`, service-role-only rules) and the `fin-service` CLI command |
 | `apps-script/` | Google Apps Script for the finance Gmail (`Code.gs`, runs every 5 min) |
 | `deploy/` | systemd unit, Caddy site block, `deploy.sh` |
-| `tests/` | Parser tests on name-scrubbed real bank emails (`tests/fixtures/`) |
+| `tests/` | Parser and bank-details tests on name-scrubbed real bank emails (`tests/fixtures/`) |
 | `docs/` | `DESIGN.md`, `gmail-setup-runbook.md` |
 
 ## Operate
@@ -23,9 +23,12 @@ https://financial-management.bashir.my.id. Design and every interview decision: 
 - Tests: `~/work/fin-venv/bin/python -m pytest -q tests`. JS syntax: copy to `.mjs`, `node --check`.
 - Logs: `sudo journalctl -u finance -n 100 --no-pager` (every push is logged with Apple's status code).
 - Secrets: `/etc/finance/env` (`root:finance 0640`): `GEMINI_API_KEY`, `FIN_INGEST_SECRET`,
-  `FIN_PB_SERVICE_USER`, `FIN_PB_SERVICE_PASSWORD`. VAPID key: `/var/lib/finance/vapid_private.pem`.
-- Settings stored in `fin_kv`: `profile`, `cycle` (start day), `tracking_start`, `holders`, `demo_periods`,
-  `setup_done`.
+  `FIN_PB_SERVICE_USER`, `FIN_PB_SERVICE_PASSWORD`, `FIN_LOCK_IDLE_SECONDS` (Face ID lock, 3600). State in
+  `/var/lib/finance`: VAPID key `vapid_private.pem`, unlocked lock sessions `lock_sessions.json`.
+- Settings stored in `fin_kv`: `profile`, `cycle` (start day, currently 28), `tracking_start`, `holders`,
+  `account_owners` ("Whose account?" in the Inbox, e.g. `{"BCA:73": username}`), `setup_done`, and `demo_periods`
+  only while demo data exists.
+- **The app is live with real money data: ask the owner before changing any `fin_*` record or setting.**
 - Household members: Settings → Members (admin), or `fin_members`. Accounts are the shared PocketBase `users`
   (register/approve in lyrsync).
 

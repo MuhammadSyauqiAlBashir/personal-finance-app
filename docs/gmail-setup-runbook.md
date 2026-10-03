@@ -1,6 +1,11 @@
 # Runbook: Gmail setup for bank-email forwarding
 
 **For:** Claude with the Chrome extension (Claude in Chrome), run on the owner's PC.
+> **Done on 2026-09-26** for the owner's inbox (result in `docs/DESIGN.md` §9). The final setting uses **exact sender
+> addresses**, not domains: domain matching missed BCA debit-card mail (`klikbca.com`) and caught Halo BCA complaint
+> mail. To reuse this for another person's inbox (e.g. the wife's), use her banks' exact sender addresses, and add
+> any new ones to the FINANCE INBOX `bank` filter (Part 5).
+
 **Goal:** only BCA and Mandiri emails from the owner's personal Gmail get forwarded to a dedicated
 "finance inbox" Gmail, where they are labelled `bank`. A server script will later read that label.
 
@@ -9,7 +14,7 @@
 | Role | Address |
 |---|---|
 | **PERSONAL** (receives bank emails today) | `bashirsyauqi@gmail.com` |
-| **FINANCE INBOX** (new, dedicated) | *Ask the owner for this address before starting.* Write it here: `________________` |
+| **FINANCE INBOX** (new, dedicated) | `personalfinancemanagementsera@gmail.com` |
 
 ## Rules for the agent
 
@@ -29,8 +34,9 @@
 2. Search `BCA`, open a recent email that is clearly a transaction notice from BCA. Click the sender
    name/avatar and note the exact sender address (e.g. `...@bca.co.id`).
 3. Repeat with `Mandiri` (e.g. `...@bankmandiri.co.id`).
-4. Build the filter text from the **domains** found, joined with ` OR `. Expected result:
-   `bca.co.id OR bankmandiri.co.id`. If the real domains differ, use the real ones and tell the owner.
+4. Build the filter text from the **exact sender addresses** found, joined with ` OR ` (not whole domains:
+   a domain can miss a bank's other sender or catch non-transaction mail). The owner's final text:
+   `bca@bca.co.id OR pasporbca@klikbca.com OR noreply.livin@bankmandiri.co.id`.
    Call this text **SENDERS** below.
 
 ## Part 2 — Turn off "forward everything" (PERSONAL)
@@ -64,7 +70,7 @@ forwarding instead.
 ## Part 4 — Filter: forward bank emails (PERSONAL)
 
 1. As **PERSONAL**, click the **sliders icon** (Show search options) at the right of the search bar.
-2. **From / Dari:** type **SENDERS** only (e.g. `bca.co.id OR bankmandiri.co.id`).
+2. **From / Dari:** type **SENDERS** only (e.g. `bca@bca.co.id OR pasporbca@klikbca.com OR noreply.livin@bankmandiri.co.id`).
    ⚠️ Do not type `from:` or brackets in this box.
 3. Leave the other boxes empty. Click **Create filter / Buat filter**.
 4. Tick **Forward it to / Teruskan ke:** and choose **FINANCE INBOX**.

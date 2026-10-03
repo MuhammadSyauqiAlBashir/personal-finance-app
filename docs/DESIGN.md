@@ -9,7 +9,7 @@ Decisions below come from the owner interview on 2026-09-26.
 |---|---|
 | Users | Bashir + wife, **fully shared** household: both see everything, either can confirm. Accounts reuse the shared PocketBase `users` (register → admin approves); access to this app is a separate membership list. |
 | Method | **Envelope, zero-based.** Each category is a wallet. At payday all income is assigned to wallets. The AI advisor proposes amounts; the owners decide. |
-| Budget month | **Configurable start day** (default 25 → month runs 25th → 24th). Settings → Budget cycle. Days 29–31 fall back to the month's last day in short months. Changing it keeps past months as they were, moves the current month's end to the day before the new start day (with a preview to confirm), and later months follow the new day. |
+| Budget month | **Configurable start day** (planned default 25; **now 28** → month runs 28th → 27th, see §11). Settings → Budget cycle. Days 29–31 fall back to the month's last day in short months. Changing it keeps past months as they were, moves the current month's end to the day before the new start day (with a preview to confirm), and later months follow the new day. |
 | Month end | Leftovers in every wallet **sweep to savings** (emergency fund first, then goals). Wallets start fresh. Overspending is shown as a negative that must be covered by moving money from another wallet. |
 | Income | Entered **manually**. |
 | Accounts | BCA, Mandiri (plus Cash). |
@@ -29,7 +29,7 @@ Decisions below come from the owner interview on 2026-09-26.
 ## 2. Architecture
 
 ```
-Bank (BCA/Mandiri) ──email──▶ dedicated Gmail ──Apps Script (every 1–5 min, HMAC-signed)──┐
+Bank (BCA/Mandiri) ──email──▶ dedicated Gmail ──Apps Script (every 5 min, HMAC-signed)─────┐
                                                                                         ▼
 iPhone PWA ──HTTPS──▶ Caddy ──/api──▶ finance backend (FastAPI, 127.0.0.1:8100, user `finance`)
                          └── static files /srv/finance                 │
@@ -75,8 +75,9 @@ iPhone PWA ──HTTPS──▶ Caddy ──/api──▶ finance backend (FastA
 | `fin_reports` | period/day, kind (daily/monthly/review), numbers JSON, AI commentary |
 | `fin_chat` | user, role, content, created (advisor chat) |
 
-Rules: every `fin_` collection is readable/writable only by members (`@collection.fin_members.user ?=
-@request.auth.id`) or the service user.
+Rules: every `fin_` collection is readable/writable **only by the service user** (`role = 'service'`). People never
+reach PocketBase directly: the backend checks login + `fin_members` and acts with the service login. (The first plan
+also let members read directly; the build dropped that.)
 
 ## 4. Transaction flow
 
@@ -102,7 +103,7 @@ Rules: every `fin_` collection is readable/writable only by members (`@collectio
 
 - **Setup (once)**: family profile → AI proposes categories and groups → owners edit → add must-spend
   bills and goals.
-- **Each cycle start (payday, default 25th)**:
+- **Each cycle start (start day, now the 28th)**:
   1. The closing period's wallet leftovers sweep to savings (emergency fund until its target, then goals).
   2. A new period opens. Owners enter income.
   3. The advisor proposes wallet amounts (must-spend first, then savings, then needs/wants; uses the last
@@ -142,7 +143,7 @@ Rules: every `fin_` collection is readable/writable only by members (`@collectio
    screenshot import.
 4. **Notifications + scheduler**: push subscriptions, all triggers, payday rollover + sweep.
 5. **Reports + advisor**: daily/monthly/trends/forecast, AI commentary, chat, monthly review, family profile.
-6. **Face ID lock, backups, polish.**
+6. **Face ID lock, backups, polish.** (Face ID lock and polish done; automated backups still open.)
 
 ## 9. Gmail setup (done 2026-09-26)
 
@@ -173,17 +174,15 @@ the personal inbox; they will arrive unlabelled, which is fine for building rule
 
 ## 10. Needed from the owner
 
-- ~~The dedicated Gmail address for bank emails~~ (done, see §9).
-- 2–3 real example emails of each type from BCA and Mandiri (numbers can be masked) for the parsers.
-- A Gemini API key from Google AI Studio — put on the server by the owner, never pasted in chat.
-- ~~The Google account for Drive~~: `personalfinancemanagementsera@gmail.com` (one-time sign-in at the end).
-- ~~Wife's account~~: `bells` (already approved); add her as a member.
+All done: finance inbox (§9), real BCA/Mandiri email samples (parsers + `tests/fixtures/`), Gemini key (on the
+server, free tier), Drive account (the finance inbox, via the Apps Script), wife's account `bells` (member).
+Still open: see §12.
 
 ## 11. Changes after the first build (2026-09-26 → 27)
 
 | Change | Why |
 |---|---|
-| Budget cycle start day is configurable (now **1**); changing it keeps past months and re-dates the current one | Owner wanted a clean start on 1 Oct |
+| Budget cycle start day is configurable; changing it keeps past months and re-dates the current one. Set to 1 for the clean start; in his own setup on 2026-10-01 09:47 WIB the owner chose **28** again → first period 1–27 Oct, first close/sweep/monthly report **28 Oct 00:05**, then 28th → 27th | Clean start on 1 Oct; owner's payday cutoff is the 28th |
 | `tracking_start` = 2026-10-01: earlier bank transactions are stored as `ignored` (flag `before_tracking_start`); bill, pace, pending and daily notifications wait for it | Clean Inbox from day one |
 | E-wallet top-ups are balances: purchases (with receipts) are added under them; fees become their own item | Owner decision (spending is the purchase, not the top-up) |
 | Receipts reach Drive through the same Apps Script instead of Drive OAuth | No Google credentials on the server; no Cloud project for the owner |
@@ -193,8 +192,16 @@ the personal inbox; they will arrive unlabelled, which is fine for building rule
 | Pushes sent with `Urgency: high`; every push logged | iOS held normal-urgency pushes until the app opened |
 | Front end retries reads after a long sleep | iOS stale-connection "no internet" on first open |
 | Gemini: money as strings, all fields required + `propertyOrdering`, no temperature override, wide model fallback | Free-tier models looped/skipped fields; 503 spikes |
+| Machine logins (any non-person role) are rejected at login | Shared `users` has service roles for other apps |
+| **2026-10-01** Clean reset: plan, months, wallets, goals, bills, rules, reports deleted; bank emails and transactions kept; setup wizard ran again | Owner wanted a real start on 1 Oct (backup `~/work/pb-before-finance-reset-2026-10-01.db`) |
+| **2026-10-01** Face ID lock after **1 hour** away; heartbeat while active (typing never locks); unlocked sessions survive restarts; Face ID starts by itself on the lock screen (iOS still needs one tap) | Owner's choice; got locked out while typing |
+| **2026-10-01** App frame: no zoom, tab bar on the real bottom edge (`screen.height`), Advisor input above the tab bar | iPhone layout issues reported by the owner |
+| **2026-10-01** Inbox "Bank details" card (from/to/amount/fee/refs, computed at read time by `details.py`) + "Whose account?" chips (kv `account_owners`) | Owner wanted to see the email details and whose account it was |
+| **2026-10-03** `finance.service` `Restart=always` (was `on-failure`) | Same as PocketBase and the newer apps: always come back |
 
-## 12. Status (2026-09-27)
+## 12. Status (2026-10-03)
 
-Live; installed on both iPhones; setup done; push verified on both phones; October income + plan in place. Next:
-real test payment on/after 1 Oct, wife's email forwarding, automated encrypted backups.
+Live with real data since 2026-10-01; installed on both iPhones; setup done by the owner (14 categories, 3 incomes,
+3 goals, 2 bills); budget month 1–27 Oct (start day 28). Bank emails, pushes to both phones, receipts and Drive
+upload all working on real transactions. Open: owner to confirm the go-live check in Drive, wife's email
+forwarding, owner's password change, automated encrypted backups.
