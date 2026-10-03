@@ -198,10 +198,12 @@ Still open: see §12.
 | **2026-10-01** App frame: no zoom, tab bar on the real bottom edge (`screen.height`), Advisor input above the tab bar | iPhone layout issues reported by the owner |
 | **2026-10-01** Inbox "Bank details" card (from/to/amount/fee/refs, computed at read time by `details.py`) + "Whose account?" chips (kv `account_owners`) | Owner wanted to see the email details and whose account it was |
 | **2026-10-03** `finance.service` `Restart=always` (was `on-failure`) | Same as PocketBase and the newer apps: always come back |
+| **2026-10-03** Home: Remaining tile + shortcuts (Plan, Income, Move, Bills, Goals); Inbox: confirm several at once | Owner request |
+| **2026-10-03** Daily 01:00 backup of the whole shared database → finance Drive via the Apps Script, 28 days kept, plain zip | Owner's choices; no Google credentials on the server |
 
 ## 12. Status (2026-10-03)
 
 Live with real data since 2026-10-01; installed on both iPhones; setup done by the owner (14 categories, 3 incomes,
 3 goals, 2 bills); budget month 1–27 Oct (start day 28). Bank emails, pushes to both phones, receipts and Drive
 upload all working on real transactions. Open: owner to confirm the go-live check in Drive, wife's email
-forwarding, owner's password change, automated encrypted backups.
+forwarding, pasting the new Apps Script so backups reach Drive.

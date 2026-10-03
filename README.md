@@ -12,7 +12,7 @@ https://financial-management.bashir.my.id. Design and every interview decision: 
 | `web/` | Static PWA served by Caddy (`/srv/finance`): plain ES modules in `web/js/`, hand-drawn SVG charts (`charts.js`), service worker for offline shell + push |
 | `pb_migrations/`, `pb_hooks/` | PocketBase schema (`fin_*`, service-role-only rules) and the `fin-service` CLI command |
 | `apps-script/` | Google Apps Script for the finance Gmail (`Code.gs`, runs every 5 min) |
-| `deploy/` | systemd unit, Caddy site block, `deploy.sh` |
+| `deploy/` | systemd unit, Caddy site block, `deploy.sh`, daily backup (`pb-backup.py` + `.service`/`.timer`) |
 | `tests/` | Parser and bank-details tests on name-scrubbed real bank emails (`tests/fixtures/`) |
 | `docs/` | `DESIGN.md`, `gmail-setup-runbook.md` |
 
@@ -29,6 +29,9 @@ https://financial-management.bashir.my.id. Design and every interview decision: 
   `account_owners` ("Whose account?" in the Inbox, e.g. `{"BCA:73": username}`), `setup_done`, and `demo_periods`
   only while demo data exists.
 - **The app is live with real money data: ask the owner before changing any `fin_*` record or setting.**
+- Backups: every day at 01:00 the whole shared PocketBase is zipped to `/var/backups/pocketbase` (7 days kept) and
+  the Apps Script saves it in Drive `Financial Management/Backups/` (28 days kept). Settings → Backups shows the last
+  one. Restore steps are in each zip's `README.txt`.
 - Household members: Settings → Members (admin), or `fin_members`. Accounts are the shared PocketBase `users`
   (register/approve in lyrsync).
 

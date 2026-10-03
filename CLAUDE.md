@@ -41,6 +41,7 @@ detail is missing): `~/work/tx_user.txt` (owner's messages), `~/work/tx_asks.txt
 | Deploy | `./deploy/deploy.sh` (`SKIP_PB_RESTART=1` to leave PocketBase running); deploy uses `install -C` for pb files |
 | Tests | `~/work/fin-venv/bin/python -m pytest -q tests` (parsers + details on scrubbed real emails). JS: copy to `.mjs`, `node --check` (Node 18) |
 | Logs | `sudo journalctl -u finance -n 100 --no-pager` (every push logged with Apple's status) |
+| Backups | `pb-backup.timer` 01:00 → `deploy/pb-backup.py` (user `pocketbase`, group `finance`) zips the **whole shared PocketBase** (online SQLite backup of `data.db`, integrity-checked; + `storage/`, hooks, migrations; no `auxiliary.db`) to `/var/backups/pocketbase/pocketbase-backup-YYYY-MM-DD.zip` (7 days local). Apps Script `saveBackups_` pulls it via signed `/api/ingest/backups*` (SHA-256 checked) into Drive `Financial Management/Backups/` and trashes Drive backups > 28 days. Uploaded log: `/var/lib/finance/backups_uploaded.json`. Status: Settings → Backups; push to the owner at 09:05 if none reached Drive for 2 days. **Owner's choices (2026-10-03): whole database, plain .zip (no password), never delete app data.** Restore steps in the zip's README.txt (restore tested on scratch 2026-10-03). Run by hand: `sudo systemctl start pb-backup.service` |
 | Scratch test env | `~/work/fin-scratch.sh` (:8101 → scratch PB `~/work/pb/fin1` on :8093) + `~/work/devproxy.py` :8102; browser checks `~/work/fin_check.py`, `shots*.py`, `race.py` (Playwright in `~/work/fin-venv`). Not running by default; stop by port (`ss -ltnp "sport = :8101"` → kill pid), never `pkill -f` (it once killed Claude's own shell) |
 | Private files in `~/work` | `email-samples.txt` (0600, real bank emails, partly masked; delete when the owner agrees), `pb-before-finance-reset-2026-10-01.db` (root 600, full pre-reset copy; **keep until automated backups exist**), `pushtest.py` (test push to both phones) |
 | One-off scripts on live DB | write `~/work/x.py`, `sudo install -m 644` to /tmp, run `sudo -u finance bash -c 'set -a; . /etc/finance/env; set +a; cd /opt/finance && PYTHONPATH=/opt/finance /opt/finance/venv/bin/python /tmp/x.py'`, delete it. **Writes need the owner's OK first** |
@@ -94,6 +95,10 @@ detail is missing): `~/work/tx_user.txt` (owner's messages), `~/work/tx_asks.txt
 
 ## History (newest first)
 
+- 2026-10-03 — Home: Remaining tile + shortcut row (Plan, Income, Move, Bills, Goals). Inbox: Select mode → confirm
+  several at once (one wallet / reason / note; flagged, split or mismatched items excluded). Daily whole-database
+  backup to the finance Drive (see Server facts → Backups). Owner: "database do not touch, EVER" — only backup files
+  are ever deleted.
 - 2026-10-03 — Inbox fixes (reproduced on the scratch stack first): one sheet per transaction (a double tap or a
   repeat route stacked two, so people filled the same one twice); unsent wallet lines / note / no-receipt reason kept
   as a per-device draft (`localStorage` `fin.drafts`) across sheet reloads (photo, Save details) and app restarts;
@@ -135,7 +140,8 @@ bank emails are unaffected (rules, no Gemini).
 - [ ] Wife's bank-email forwarding (click-by-click guide given 2026-09-27: her Gmail filter → forward to the finance
       inbox; add new senders to the finance-inbox `bank` filter if not BCA/Mandiri; add her full name in Family profile). Unconfirmed; her banks were never named.
       `account_owners` is filled by hand in the Inbox, so it doesn't show whether forwarding works.
-- [ ] Automated encrypted backups (server-wide plan, see `~/.claude/CLAUDE.md`).
+- [ ] Backups: server side live since 2026-10-03 (first zip made). Owner must paste the new `apps-script/Code.gs`
+      into the Apps Script editor (Bank email forwarder) so zips reach Drive; then Settings → Backups shows "Last in Drive".
 
 ## Gotchas
 
