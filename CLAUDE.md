@@ -128,7 +128,6 @@ bank emails are unaffected (rules, no Gemini).
 - [ ] Wife's bank-email forwarding (click-by-click guide given 2026-09-27: her Gmail filter → forward to the finance
       inbox; add new senders to the finance-inbox `bank` filter if not BCA/Mandiri; add her full name in Family profile). Unconfirmed; her banks were never named.
       `account_owners` is filled by hand in the Inbox, so it doesn't show whether forwarding works.
-- [ ] Change the owner's app login password (the old one was shared in a chat; same login works for lyrsync).
 - [ ] Automated encrypted backups (server-wide plan, see `~/.claude/CLAUDE.md`).
 
 ## Gotchas
