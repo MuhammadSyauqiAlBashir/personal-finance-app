@@ -95,6 +95,11 @@ detail is missing): `~/work/tx_user.txt` (owner's messages), `~/work/tx_asks.txt
 
 ## History (newest first)
 
+- 2026-10-03 — Top-ups: auto-confirmed once purchases account for all of it and are confirmed (`settle_topup`);
+  Add form has wallet + no-receipt reason → "Add & confirm" in one step; top-up sheet refreshes after a purchase.
+  Sheets are now a full-frame `<dialog>` layer (top 0, height `--app-h`) with `.sheet-panel` at its bottom; FAB,
+  toast, lock overlay placed from the frame top (owner's iPhone still showed sheets one status bar short with
+  bottom anchoring). Settings → Screen check shows the sizes the device reports (ask for a screenshot of it).
 - 2026-10-03 — Home: Remaining tile + shortcut row (Plan, Income, Move, Bills, Goals). Inbox: Select mode → confirm
   several at once (one wallet / reason / note; flagged, split or mismatched items excluded). Daily whole-database
   backup to the finance Drive (see Server facts → Backups). Owner: "database do not touch, EVER" — only backup files
