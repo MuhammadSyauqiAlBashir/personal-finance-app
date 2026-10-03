@@ -223,9 +223,9 @@ export function sheet(title, { tall = false, onClose, key = "" } = {}) {
   if (key && sheetOpen(key)) return null
   const body = el("div", { class: "sheet-body" })
   const closeBtn = el("button", { class: "icon-btn", type: "button", "aria-label": "Close" }, icon("x"))
-  const dialog = el("dialog", { class: `sheet${tall ? " tall" : ""}` },
+  const dialog = el("dialog", { class: `sheet${tall ? " tall" : ""}` }, el("div", { class: "sheet-panel" },
     el("div", { class: "sheet-grab" }),
-    el("div", { class: "sheet-head" }, el("h2", { text: title }), closeBtn), body)
+    el("div", { class: "sheet-head" }, el("h2", { text: title }), closeBtn), body))
   const close = () => { if (dialog.open) dialog.close() }
   closeBtn.onclick = close
   dialog.addEventListener("click", (e) => { if (e.target === dialog) close() })

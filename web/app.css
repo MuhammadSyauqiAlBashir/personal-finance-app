@@ -49,10 +49,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: non
    "full screen" that's one status bar short, which left the tab bar floating above the bottom edge. */
 #appView { position: fixed; top: 0; left: 0; right: 0; height: var(--app-h, 100%); display: flex; flex-direction: column; }
 #appView > #page { flex: 1; min-height: 0; width: 100%; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-/* Everything else fixed to the bottom edge follows the same frame: `bottom: var(--frame-gap)` puts it on the frame's
-   bottom edge even when iOS reports a window shorter than the screen (plain `bottom: 0` floated one status bar up, with
-   the tab bar showing underneath an open sheet). The % resolves where it's used: the window height for fixed boxes. */
-:root { --frame-gap: calc(100% - var(--app-h, 100%)); --frame-h: var(--app-h, 100vh); }
+/* Everything else on the bottom edge is placed from the TOP of the same frame (top + --frame-h), never with
+   `bottom:`. In the iPhone Home Screen app the window iOS reports can be shorter than the screen, so anything
+   anchored to the window's bottom floated one status bar up (sheets, the + button), while the frame is right. */
+:root { --frame-h: var(--app-h, 100vh); }
 #setupView, #authView, #lockView:not(.lock-overlay), #splash { position: fixed; top: 0; left: 0; right: 0; height: var(--app-h, 100%); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 body {
   font: 16px/1.45 var(--font);
@@ -190,8 +190,8 @@ p { margin: 0; }
 .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
 .chips::-webkit-scrollbar { display: none; }
 
-label.field { display: block; font-size: 13px; font-weight: 600; color: var(--fg-2); margin-bottom: 12px; }
-label.field > span { display: block; margin-bottom: 6px; }
+label.field, div.field { display: block; font-size: 13px; font-weight: 600; color: var(--fg-2); margin-bottom: 12px; }
+label.field > span, div.field > span { display: block; margin-bottom: 6px; }
 input:not([type=checkbox]):not([type=radio]):not([type=file]), select, textarea {
   display: block; width: 100%; font-size: 17px; padding: 12px 14px;
   background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 12px; -webkit-appearance: none; appearance: none;
@@ -296,16 +296,21 @@ input::placeholder, textarea::placeholder { color: var(--faint); }
 .sticky-actions { position: sticky; bottom: calc(-18px - var(--safe-bottom)); padding: 12px 0 calc(6px + var(--safe-bottom)); background: linear-gradient(180deg, transparent, var(--surface) 30%); margin-top: 16px; display: grid; gap: 8px; }
 
 /* ---------- Sheets ---------- */
-/* Bottom on the frame's bottom edge; top always below the status bar / Dynamic Island so the close button can be tapped. */
+/* The sheet layer covers exactly the app frame (top 0, height --frame-h: the box that puts the tab bar on the bottom
+   edge) and the panel sits at its bottom, its top always below the status bar / Dynamic Island so the close button
+   can be tapped. Tapping the empty layer above the panel closes the sheet. */
 dialog.sheet {
-  position: fixed; inset: auto 0 var(--frame-gap) 0; margin: 0 auto; width: 100%; max-width: 680px;
-  max-height: calc(var(--frame-h) - var(--safe-top) - 12px);
-  border: 0; border-radius: 24px 24px 0 0; padding: 0 16px calc(18px + var(--safe-bottom));
-  background: var(--surface); color: var(--fg); overflow-y: auto; -webkit-overflow-scrolling: touch;
-  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
+  position: fixed; inset: 0 0 auto 0; height: var(--frame-h); max-height: none; width: 100%; max-width: none;
+  margin: 0; padding: 0; border: 0; background: transparent; color: var(--fg); overflow: hidden;
 }
-dialog.sheet.tall { height: calc(var(--frame-h) - var(--safe-top) - 12px); }
-dialog.sheet[open] { animation: sheet-up 0.28s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+dialog.sheet[open] { display: flex; flex-direction: column; justify-content: flex-end; }
+.sheet-panel {
+  width: 100%; max-width: 680px; margin: 0 auto; max-height: calc(var(--frame-h) - var(--safe-top) - 12px);
+  border-radius: 24px 24px 0 0; padding: 0 16px calc(18px + var(--safe-bottom));
+  background: var(--surface); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5); animation: sheet-up 0.28s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+dialog.sheet.tall .sheet-panel { height: calc(var(--frame-h) - var(--safe-top) - 12px); }
 dialog::backdrop { bottom: -25vh; background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(2px); } /* also covers the frame below a short window */
 @keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 .sheet-grab { width: 38px; height: 5px; border-radius: 3px; background: var(--line-2); margin: 8px auto 0; }
@@ -326,7 +331,7 @@ dialog::backdrop { bottom: -25vh; background: rgba(0, 0, 0, 0.55); backdrop-filt
 .tabbar .ico { width: 25px; height: 25px; }
 .tabbar .badge { position: absolute; top: 2px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--critical); color: #fff; font-size: 11px; display: grid; place-items: center; }
 .fab {
-  position: fixed; right: max(16px, calc(50% - 324px)); bottom: calc(84px + var(--safe-bottom) + var(--frame-gap)); z-index: 15;
+  position: fixed; right: max(16px, calc(50% - 324px)); top: calc(var(--frame-h) - 142px - var(--safe-bottom)); z-index: 15; /* 84px above the frame bottom */
   width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center;
   background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink);
   box-shadow: 0 10px 30px rgba(52, 211, 153, 0.35);
@@ -465,21 +470,21 @@ svg.chart .crosshair { stroke: var(--fg-2); stroke-width: 1; }
 
 /* ---------- Toast ---------- */
 .toast {
-  position: fixed; left: 50%; bottom: calc(96px + var(--safe-bottom) + var(--frame-gap)); transform: translateX(-50%); z-index: 200;
+  position: fixed; left: 50%; top: calc(var(--frame-h) - 96px - var(--safe-bottom)); transform: translate(-50%, -100%); z-index: 200;
   max-width: calc(100% - 32px); padding: 11px 16px; border-radius: 14px; font-size: 15px;
   background: rgba(37, 41, 52, 0.97); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
   animation: toast-in 0.25s ease both;
 }
 .toast.good { border-color: rgba(52, 211, 153, 0.5); }
 .toast.bad { border-color: rgba(208, 59, 59, 0.6); }
-@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, calc(-100% + 8px)); } to { opacity: 1; transform: translate(-50%, -100%); } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
 /* Face ID lock on top of the open app (keeps whatever was being typed) */
-#lockView.lock-overlay { position: fixed; inset: 0 0 var(--frame-gap) 0; z-index: 90; background: color-mix(in srgb, var(--bg) 82%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+#lockView.lock-overlay { position: fixed; inset: 0 0 auto 0; height: var(--frame-h); z-index: 90; background: color-mix(in srgb, var(--bg) 82%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
 
 /* ---- Bank details card (Inbox) ---- */
 .bank-card .bank-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }

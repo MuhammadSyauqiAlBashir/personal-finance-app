@@ -251,7 +251,8 @@ export function txRow(tx, onclick) {
 // ---------------------------------------------------------------------------
 // Quick add
 // ---------------------------------------------------------------------------
-export async function quickAdd(parent) {
+// parent: the e-wallet top-up this purchase belongs to. onDone: runs after something was added (default: re-route).
+export async function quickAdd(parent, onDone = () => route()) {
   if (!categories.length) await loadCategories()
   const sh = sheet(parent ? "Add a purchase" : "Add a transaction", { key: "add" })
   if (!sh) return
@@ -271,7 +272,7 @@ export async function quickAdd(parent) {
         const res = await api(parent ? `/transactions/${parent.id}/purchase` : "/transactions/from-receipt", { method: "POST", body: fd })
         sh.close()
         toast("Read the receipt. Check and confirm.", "good")
-        openTransaction(res.transaction.id, () => route())
+        openTransaction(res.transaction.id, onDone)
       } catch (err) {
         status.textContent = err.message
       }
@@ -286,9 +287,32 @@ export async function quickAdd(parent) {
   const wallet = categorySelect("")
   wallet.options[0].textContent = "Wallet (optional; can choose when confirming)"
   const walletField = el("label", { class: "field" }, el("span", { text: "Wallet" }), wallet)
-  kind.addEventListener("change", () => { walletField.hidden = kind.value !== "expense" })
+  // Receipt: a photo next (opens the transaction to attach it), or no receipt + reason. With a wallet and a reason,
+  // "Add & confirm" finishes it here: no second screen.
+  let reason = ""
+  const other = el("input", { placeholder: "Reason", maxlength: 200, hidden: true })
+  const chips = el("div", { class: "reason-chips" })
+  const pick = (chip, r) => {
+    for (const c of chips.children) c.classList.toggle("on", c === chip)
+    other.hidden = r !== "Other"
+    reason = r === "Other" ? other.value.trim() : r
+    updateSave()
+  }
+  const photoChip = el("button", { class: "chip on", type: "button", text: "📷 Photo next" })
+  photoChip.onclick = () => pick(photoChip, "")
+  chips.append(photoChip, ...REASONS.map((r) => { const c = el("button", { class: "chip", type: "button", text: r }); c.onclick = () => pick(c, r); return c }))
+  other.addEventListener("input", () => { reason = other.value.trim(); updateSave() })
+  const receiptField = el("div", { class: "field" }, el("span", { text: "Receipt" }), chips, other)
+  const isSpending = () => !!parent || kind.value === "expense"
+  kind.addEventListener("change", () => { walletField.hidden = receiptField.hidden = !isSpending(); updateSave() })
+  wallet.addEventListener("change", () => updateSave())
   const msg = el("p", { class: "form-msg" })
   const save = el("button", { class: "btn wide", type: "submit", text: "Add" })
+  const oneStep = () => isSpending() && wallet.value && reason
+  function updateSave() {
+    save.textContent = oneStep() ? "Add & confirm" : "Add"
+    save.classList.toggle("primary", !!oneStep())
+  }
   const form = el("form", {},
     el("label", { class: "field" }, el("span", { text: "Amount" }), el("div", { class: "money-wrap" }, amount)),
     el("label", { class: "field" }, el("span", { text: parent ? "Where" : "Merchant or payee" }), merchant),
@@ -296,7 +320,7 @@ export async function quickAdd(parent) {
     parent ? null : el("div", { class: "row" },
       el("label", { class: "field grow" }, el("span", { text: "Paid from" }), account),
       el("label", { class: "field grow" }, el("span", { text: "Type" }), kind)),
-    walletField, msg, save)
+    walletField, receiptField, msg, save)
   form.addEventListener("submit", async (e) => {
     e.preventDefault()
     if (!amount.money()) { msg.textContent = "Enter the amount."; return }
@@ -307,8 +331,17 @@ export async function quickAdd(parent) {
           account: parent ? parent.wallet : account.value, kind: parent ? "expense" : kind.value,
           wallet: !parent && kind.value === "topup" ? account.value : "", parent: parent ? parent.id : "",
           category: kind.value === "expense" || parent ? wallet.value : "" } })
+        if (oneStep()) {
+          try {
+            await api(`/transactions/${tx.id}/confirm`, { method: "POST", json: { splits: [{ category: wallet.value, amount: tx.amount }], waive_reason: reason } })
+            sh.close()
+            toast("Added and confirmed", "good")
+            onDone()
+            return
+          } catch (err) { toast(err.message, "bad") } // saved but not confirmed: finish it in its sheet
+        }
         sh.close()
-        openTransaction(tx.id, () => route())
+        openTransaction(tx.id, onDone)
       } catch (err) { msg.textContent = err.message }
     })
   })
@@ -431,10 +464,12 @@ function topupSection(tx, ctx) {
     el("p", { class: "hint", text: tx.remaining > 0 ? `${rp(tx.remaining)} still to account for. Add each purchase with its receipt.` :
       tx.remaining < 0 ? `Purchases exceed the top-up by ${rp(-tx.remaining)}.` : "Fully accounted for." })))
   if (tx.purchases && tx.purchases.length) {
-    box.append(el("div", { class: "list" }, tx.purchases.map((p) => txRow(p, () => openTransaction(p.id, ctx.reload)))))
+    const again = () => { ctx.markChanged(); return ctx.reload() }
+    box.append(el("div", { class: "list" }, tx.purchases.map((p) => txRow(p, () => openTransaction(p.id, again)))))
   }
   if (tx.status === "pending") {
-    box.append(el("button", { class: "btn primary wide", type: "button", onclick: () => quickAdd(tx) }, icon("camera"), "Add a purchase"))
+    // After adding or confirming a purchase, this top-up sheet refreshes right away (it used to stay stale underneath).
+    box.append(el("button", { class: "btn primary wide", type: "button", onclick: () => quickAdd(tx, () => { ctx.markChanged(); return ctx.reload() }) }, icon("camera"), "Add a purchase"))
     if (tx.remaining > 0) {
       const sel = categorySelect("")
       const close = el("button", { class: "btn wide", type: "button", text: `Close: put the remaining ${rp(tx.remaining)} in…` })

@@ -35,7 +35,8 @@ export async function renderSettings(page) {
         } catch (err) { toast(err.message, "bad") }
       }),
       item("face", "Face ID lock", pk.passkeys.length ? `${pk.passkeys.length} passkey${pk.passkeys.length === 1 ? "" : "s"}. Asks after 1 hour away` : "Off. Tap to set up", () => passkeySheet(pk.passkeys, page)),
-      item("lock", "Lock now", null, async () => { await api("/lock", { method: "POST" }); location.reload() })),
+      item("lock", "Lock now", null, async () => { await api("/lock", { method: "POST" }); location.reload() }),
+      item("📐", "Screen check", "Sizes this iPhone reports (for layout problems)", () => screenSheet())),
     el("div", { class: "section-head section" }, el("h2", { text: "Data" })),
     el("div", { class: "list" },
       item("mail", "Bank emails", "What arrived and how it was read", () => emailSheet()),
@@ -47,6 +48,38 @@ export async function renderSettings(page) {
       b.onclick = async () => { await api("/logout", { method: "POST" }).catch(() => {}); location.hash = ""; location.reload() }
       return b
     })()))
+}
+
+// What the device reports about the window, screen and safe areas, plus where the tab bar and this sheet ended up.
+// For layout bugs that only happen in the Home Screen app: a screenshot of this tells exactly what's off.
+function screenSheet() {
+  const sh = sheet("Screen check")
+  const probe = el("div", { style: { position: "fixed", top: 0, left: 0, visibility: "hidden", paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" } })
+  document.body.append(probe)
+  const cs = getComputedStyle(probe)
+  const safe = `${parseFloat(cs.paddingTop)} / ${parseFloat(cs.paddingBottom)}`
+  probe.remove()
+  const r = (sel) => { const n = document.querySelector(sel); if (!n) return "—"; const b = n.getBoundingClientRect(); return `${Math.round(b.top)} → ${Math.round(b.bottom)}` }
+  const vv = window.visualViewport
+  const rows = [
+    ["Home Screen app", String(!!(navigator.standalone || matchMedia("(display-mode: standalone)").matches))],
+    ["Window (innerHeight)", `${innerWidth} × ${innerHeight}`],
+    ["Page (clientHeight)", String(document.documentElement.clientHeight)],
+    ["Screen", `${screen.width} × ${screen.height}`],
+    ["Visible area", vv ? `${Math.round(vv.height)} (offset ${Math.round(vv.offsetTop)})` : "—"],
+    ["App frame (--app-h)", getComputedStyle(document.documentElement).getPropertyValue("--app-h").trim() || "—"],
+    ["Safe area top / bottom", safe],
+    ["Tab bar top → bottom", r(".tabbar")],
+    ["This sheet top → bottom", ""],
+    ["Page scrolled", `${Math.round(scrollX)}, ${Math.round(scrollY)}`],
+    ["iOS / browser", (navigator.userAgent.match(/OS [\d_]+/) || [""])[0].replace(/_/g, ".")],
+  ]
+  const dl = el("dl", { class: "kv card" }, ...rows.flatMap(([k, v]) => [el("dt", { text: k }), el("dd", { text: v })]))
+  sh.body.append(el("p", { class: "muted", style: { marginBottom: "12px" }, text: "Take a screenshot of this and send it if the layout looks wrong." }), dl)
+  requestAnimationFrame(() => setTimeout(() => {
+    const b = sh.dialog.querySelector(".sheet-panel").getBoundingClientRect()
+    dl.children[17].textContent = `${Math.round(b.top)} → ${Math.round(b.bottom)}`
+  }, 400))
 }
 
 // Daily database backup (01:00) saved by the Gmail Apps Script into the finance Google Drive.

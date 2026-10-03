@@ -417,7 +417,23 @@ async def _confirm(tid: str, body: ConfirmIn, background: BackgroundTasks, user:
     if tx["kind"] == "expense":
         background.add_task(drive.upload_for_transaction, tid)
         background.add_task(notify.after_confirm, tid)
+        if tx.get("parent"):
+            await settle_topup(tx["parent"], user)
     return tx
+
+
+async def settle_topup(parent_id: str, user: User):
+    """A top-up only moves money into an e-wallet; the purchases are the spending. Once they account for all of it and
+    are all confirmed, confirm the top-up too, so nobody has to come back for a separate "Confirm top-up" step."""
+    async with tx_lock(parent_id):
+        parent = await pb.get("fin_transactions", parent_id)
+        if parent["kind"] != "topup" or parent["status"] != "pending":
+            return
+        item = (await enrich([parent]))[0]
+        if item["remaining"] > 0 or any(c["status"] == "pending" for c in item["purchases"]):
+            return
+        await pb.update("fin_transactions", parent_id, {"status": "confirmed", "confirmed_by": user.username,
+                                                         "confirmed_at": now_iso()})
 
 
 class CloseTopupIn(BaseModel):
