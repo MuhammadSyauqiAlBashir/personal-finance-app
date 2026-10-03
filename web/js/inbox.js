@@ -1,4 +1,4 @@
-import { api, armed, busy, el, fmtDay, fmtTime, icon, localDateKey, moneyInput, nowLocalInput, rp, sheet, shrinkImage, toast } from "./lib.js?v=__VERSION__"
+import { api, armed, busy, el, fmtDay, fmtTime, icon, localDateKey, moneyInput, nowLocalInput, rp, sheet, sheetOpen, shrinkImage, store, toast } from "./lib.js?v=__VERSION__"
 import { refreshBadge, route, state } from "./app.js?v=__VERSION__"
 
 let categories = []
@@ -7,6 +7,32 @@ async function loadCategories() {
   return categories
 }
 const catById = (id) => categories.find((c) => c.id === id)
+
+// What someone has filled in on a pending transaction but not confirmed yet (wallet lines, note, no-receipt reason).
+// Kept on this device so it survives the sheet reloading (after adding a photo or saving details) and iOS restarting
+// the app while the camera is open. Cleared on confirm / ignore / delete; old drafts expire after a week.
+const DRAFTS = "fin.drafts"
+const getDraft = (id) => store.get(DRAFTS, {})[id] || {}
+function setDraft(id, patch) {
+  const all = store.get(DRAFTS, {})
+  for (const [k, v] of Object.entries(all)) if (Date.now() - (v.at || 0) > 7 * 86400e3) delete all[k]
+  all[id] = { ...all[id], ...patch, at: Date.now() }
+  store.set(DRAFTS, all)
+}
+function clearDraft(id) {
+  const all = store.get(DRAFTS, {})
+  delete all[id]
+  store.set(DRAFTS, all)
+}
+// The transaction was confirmed meanwhile (other phone, or an older sheet): say so and close.
+function doneElsewhere(err, tx, ctx) {
+  if (err.status !== 409) return false
+  clearDraft(tx.id)
+  ctx.markChanged()
+  toast(err.message)
+  ctx.close()
+  return true
+}
 
 const REASONS = ["Bank transfer", "Parking", "Street food", "Online invoice by email", "Lost it", "Other"]
 const GROUP_NAME = { must: "Must spend", needs: "Needs", wants: "Wants", savings: "Savings" }
@@ -17,9 +43,13 @@ const GROUP_NAME = { must: "Must spend", needs: "Needs", wants: "Wants", savings
 let listStatus = "pending"
 let search = ""
 
-export async function renderInbox(page, arg) {
+export async function renderInbox(page, arg, _arg2, { quiet = false } = {}) {
   if (arg === "all" || arg === "ignored" || arg === "failed") listStatus = arg === "all" ? "confirmed" : arg
   await loadCategories()
+  const query = `/transactions?status=${listStatus}&search=${encodeURIComponent(listStatus === "pending" ? "" : search)}`
+  // quiet: refresh in place after a sheet closes. Fetch first and swap in one go (no skeleton), so the list keeps
+  // its scroll position.
+  const early = quiet ? await api(query) : null
   const seg = el("div", { class: "segmented" })
   for (const [key, label] of [["pending", "To confirm"], ["confirmed", "Confirmed"], ["ignored", "Ignored"], ["failed", "Failed"]]) {
     seg.append(el("button", { type: "button", "aria-pressed": String(listStatus === key), text: label,
@@ -27,14 +57,14 @@ export async function renderInbox(page, arg) {
   }
   const searchBox = el("input", { type: "search", placeholder: "Search merchant or note", value: search, enterkeyhint: "search" })
   searchBox.addEventListener("change", () => { search = searchBox.value; renderInbox(page) })
-  const listWrap = el("div", {}, el("div", { class: "skeleton", style: { height: "220px", marginTop: "14px" } }))
+  const listWrap = el("div", {}, quiet ? null : el("div", { class: "skeleton", style: { height: "220px", marginTop: "14px" } }))
   page.replaceChildren(
     el("div", { class: "topbar" }, el("div", {}, el("h1", { text: "Inbox" }),
       el("div", { class: "sub", text: "Bank emails, receipts and quick adds land here." }))),
     seg, listStatus !== "pending" ? el("div", { style: { marginTop: "10px" } }, searchBox) : null, listWrap)
   page.append(el("button", { class: "fab", type: "button", "aria-label": "Add a transaction", onclick: () => quickAdd() }, icon("plus")))
 
-  const data = await api(`/transactions?status=${listStatus}&search=${encodeURIComponent(listStatus === "pending" ? "" : search)}`)
+  const data = early || await api(query)
   listWrap.replaceChildren()
   if (!data.items.length) {
     listWrap.append(el("div", { class: "empty-state" }, el("div", { class: "big", text: listStatus === "pending" ? "🎉" : "🗂️" }),
@@ -52,7 +82,7 @@ export async function renderInbox(page, arg) {
       list = el("div", { class: "list" })
       listWrap.append(list)
     }
-    list.append(txRow(tx, () => openTransaction(tx.id, () => renderInbox(page))))
+    list.append(txRow(tx, () => openTransaction(tx.id, () => renderInbox(page, null, null, { quiet: true }))))
   }
 }
 
@@ -97,7 +127,8 @@ export function txRow(tx, onclick) {
 // ---------------------------------------------------------------------------
 export async function quickAdd(parent) {
   if (!categories.length) await loadCategories()
-  const sh = sheet(parent ? "Add a purchase" : "Add a transaction")
+  const sh = sheet(parent ? "Add a purchase" : "Add a transaction", { key: "add" })
+  if (!sh) return
   const fileInput = el("input", { type: "file", accept: "image/*", hidden: true })
   const scan = el("button", { class: "btn primary wide", type: "button" }, icon("camera"), "Scan receipt or payment screenshot")
   const status = el("p", { class: "hint", style: { textAlign: "center" } })
@@ -167,8 +198,11 @@ export async function quickAdd(parent) {
 // Transaction sheet
 // ---------------------------------------------------------------------------
 export async function openTransaction(id, onDone) {
+  const key = `tx:${id}`
+  if (sheetOpen(key)) return
   if (!categories.length) await loadCategories()
-  const sh = sheet("Transaction", { tall: true, onClose: () => { refreshBadge(); if (changed && onDone) onDone() } })
+  const sh = sheet("Transaction", { tall: true, key, onClose: () => { refreshBadge(); if (changed && onDone) onDone() } })
+  if (!sh) return
   let changed = false
   const reload = async () => {
     const tx = await api(`/transactions/${id}`)
@@ -205,7 +239,7 @@ async function txBody(tx, ctx) {
   const flags = tx.flags || {}
   if (flags.possible_duplicate_of && pending) {
     const ignoreBtn = el("button", { class: "btn small", type: "button", text: "Ignore this one" })
-    ignoreBtn.onclick = () => busy(ignoreBtn, async () => { await api(`/transactions/${tx.id}/ignore`, { method: "POST" }); ctx.markChanged(); toast("Ignored as duplicate"); ctx.close() })
+    ignoreBtn.onclick = () => busy(ignoreBtn, async () => { await api(`/transactions/${tx.id}/ignore`, { method: "POST" }); clearDraft(tx.id); ctx.markChanged(); toast("Ignored as duplicate"); ctx.close() })
     box.append(el("div", { class: "banner warn flag" }, icon("alert"), el("div", { class: "grow" },
       el("div", { class: "banner-title", text: "Possible duplicate" }),
       el("div", { class: "banner-sub", text: "Another transaction has the same amount within 10 minutes (e.g. a shop order paid via an e-wallet sends two emails)." })), ignoreBtn))
@@ -233,10 +267,10 @@ async function txBody(tx, ctx) {
     actions.append(undo)
   } else if (tx.status === "pending") {
     const ig = el("button", { class: "btn small", type: "button", text: "Ignore" })
-    actions.append(armed(ig, "Tap again to ignore", async () => { await api(`/transactions/${tx.id}/ignore`, { method: "POST" }); ctx.markChanged(); toast("Ignored"); ctx.close() }))
+    actions.append(armed(ig, "Tap again to ignore", async () => { await api(`/transactions/${tx.id}/ignore`, { method: "POST" }); clearDraft(tx.id); ctx.markChanged(); toast("Ignored"); ctx.close() }))
     if (tx.source !== "email") {
       const del = el("button", { class: "btn small danger", type: "button", text: "Delete" })
-      actions.append(armed(del, "Tap again to delete", async () => { await api(`/transactions/${tx.id}`, { method: "DELETE" }); ctx.markChanged(); toast("Deleted"); ctx.close() }))
+      actions.append(armed(del, "Tap again to delete", async () => { await api(`/transactions/${tx.id}`, { method: "DELETE" }); clearDraft(tx.id); ctx.markChanged(); toast("Deleted"); ctx.close() }))
     }
   } else if (tx.status === "ignored") {
     const r = el("button", { class: "btn small", type: "button", text: "Restore to inbox" })
@@ -251,7 +285,10 @@ function transferSection(tx, ctx) {
   const box = el("div", { class: "card" }, el("p", { text: "A move between your own accounts. It doesn't touch any wallet." }))
   if (tx.status === "pending") {
     const ok = el("button", { class: "btn primary wide", type: "button", style: { marginTop: "12px" } }, icon("check"), "Confirm transfer")
-    ok.onclick = () => busy(ok, async () => { await api(`/transactions/${tx.id}/confirm`, { method: "POST", json: {} }); ctx.markChanged(); toast("Confirmed", "good"); ctx.close() })
+    ok.onclick = () => busy(ok, async () => {
+      try { await api(`/transactions/${tx.id}/confirm`, { method: "POST", json: {} }); ctx.markChanged(); toast("Confirmed", "good"); ctx.close() }
+      catch (err) { if (!doneElsewhere(err, tx, ctx)) toast(err.message, "bad") }
+    })
     const notTransfer = el("button", { class: "link-btn small", type: "button", style: { marginTop: "10px" }, text: "It's actually spending" })
     notTransfer.onclick = async () => { await api(`/transactions/${tx.id}`, { method: "PATCH", json: { kind: "expense" } }); await api(`/transactions/${tx.id}/recategorize`, { method: "POST" }); ctx.markChanged(); await ctx.reload() }
     box.append(ok, notTransfer)
@@ -279,7 +316,7 @@ function topupSection(tx, ctx) {
       close.onclick = () => busy(close, async () => {
         if (!sel.value) { msg.textContent = "Choose a wallet for the rest."; return }
         try { await api(`/transactions/${tx.id}/close`, { method: "POST", json: { category: sel.value } }); ctx.markChanged(); toast("Top-up closed", "good"); ctx.close() }
-        catch (err) { msg.textContent = err.message }
+        catch (err) { if (!doneElsewhere(err, tx, ctx)) msg.textContent = err.message }
       })
       box.append(el("div", { class: "card" }, el("p", { class: "muted small", text: "Spent the rest on small things without receipts?" }),
         el("div", { style: { margin: "10px 0" } }, sel), close, msg))
@@ -288,7 +325,7 @@ function topupSection(tx, ctx) {
       const msg = el("p", { class: "form-msg" })
       ok.onclick = () => busy(ok, async () => {
         try { await api(`/transactions/${tx.id}/confirm`, { method: "POST", json: {} }); ctx.markChanged(); toast("Confirmed", "good"); ctx.close() }
-        catch (err) { msg.textContent = err.message }
+        catch (err) { if (!doneElsewhere(err, tx, ctx)) msg.textContent = err.message }
       })
       box.append(ok, msg)
     }
@@ -310,6 +347,7 @@ function categorySelect(value, onchange) {
 
 function expenseSections(tx, ctx) {
   const pending = tx.status === "pending"
+  const draft = pending ? getDraft(tx.id) : {}
   const out = []
 
   // ---- Receipt ----
@@ -364,19 +402,23 @@ function expenseSections(tx, ctx) {
     const noReceipt = el("button", { class: "link-btn small", type: "button", text: "I don't have a receipt" })
     const chips = el("div", { class: "reason-chips" })
     const other = el("input", { placeholder: "Reason", maxlength: 200, hidden: true })
+    const pick = (r) => {
+      for (const c of chips.children) c.classList.toggle("on", c.textContent === r)
+      other.hidden = r !== "Other"
+      waiveReason = r === "Other" ? other.value.trim() : r
+    }
     for (const r of REASONS) {
       const chip = el("button", { class: "chip", type: "button", text: r })
-      chip.onclick = () => {
-        for (const c of chips.children) c.classList.remove("on")
-        chip.classList.add("on")
-        other.hidden = r !== "Other"
-        waiveReason = r === "Other" ? "" : r
-      }
+      chip.onclick = () => { pick(r); setDraft(tx.id, { waive: { chip: r, other: other.value } }) }
       chips.append(chip)
     }
-    other.addEventListener("input", () => { waiveReason = other.value.trim() })
+    other.addEventListener("input", () => { waiveReason = other.value.trim(); setDraft(tx.id, { waive: { chip: "Other", other: other.value } }) })
     waiveBox.append(el("p", { class: "muted small", text: "Why is there no receipt?" }), chips, other)
-    noReceipt.onclick = () => { waiveBox.hidden = !waiveBox.hidden; if (waiveBox.hidden) waiveReason = "" }
+    noReceipt.onclick = () => {
+      waiveBox.hidden = !waiveBox.hidden
+      if (waiveBox.hidden) { waiveReason = ""; setDraft(tx.id, { waive: null }) }
+    }
+    if (draft.waive) { other.value = draft.waive.other || ""; pick(draft.waive.chip); waiveBox.hidden = false }
     receiptCard.append(add, file, status, el("div", { style: { marginTop: "8px" } }, noReceipt), waiveBox)
   }
 
@@ -385,6 +427,7 @@ function expenseSections(tx, ctx) {
   const splitCard = el("div", { class: "card" })
   const rows = el("div")
   const leftInfo = el("p", { class: "split-left" })
+  const saveSplits = () => setDraft(tx.id, { splits: [...rows.children].map((r) => ({ category: r._sel.value, amount: r._amount.money() })) })
   const recalc = () => {
     const sum = [...rows.children].reduce((s, r) => s + r._amount.money(), 0)
     const diff = tx.amount - sum
@@ -392,18 +435,22 @@ function expenseSections(tx, ctx) {
     leftInfo.className = `split-left ${diff === 0 ? "ok" : "bad"}`
   }
   const addRow = (cat, amount) => {
-    const sel = categorySelect(cat)
+    const sel = categorySelect(cat, saveSplits)
     const amt = moneyInput(amount)
-    amt.addEventListener("input", recalc)
+    amt.addEventListener("input", () => { recalc(); saveSplits() })
     const rm = el("button", { class: "icon-btn", type: "button", "aria-label": "Remove" }, icon("x"))
     const row = el("div", { class: "split-row" }, sel, el("div", { class: "money-wrap" }, amt), rm)
     row._sel = sel
     row._amount = amt
-    rm.onclick = () => { if (rows.children.length > 1) { row.remove(); recalc() } }
+    rm.onclick = () => { if (rows.children.length > 1) { row.remove(); recalc(); saveSplits() } }
     rows.append(row)
     recalc()
   }
-  if (tx.status === "confirmed" || (tx.splits && tx.splits.length)) {
+  if (pending && draft.splits && draft.splits.length) {
+    // What this person chose before the sheet reloaded. A single line follows the (possibly edited) amount.
+    const lines = draft.splits.length === 1 ? [{ ...draft.splits[0], amount: tx.amount }] : draft.splits
+    for (const s of lines) addRow(s.category, s.amount)
+  } else if (tx.status === "confirmed" || (tx.splits && tx.splits.length)) {
     for (const s of tx.splits) addRow(s.category, s.amount)
   } else if (ai.splits && ai.splits.length) {
     for (const s of ai.splits) addRow(s.category_id, s.amount)
@@ -421,6 +468,7 @@ function expenseSections(tx, ctx) {
     split.onclick = () => {
       const sum = [...rows.children].reduce((s, r) => s + r._amount.money(), 0)
       addRow("", Math.max(0, tx.amount - sum))
+      saveSplits()
     }
     splitCard.append(el("div", { class: "row between" }, leftInfo, split))
     if (ai.suggest_new && !ai.category) {
@@ -429,9 +477,10 @@ function expenseSections(tx, ctx) {
         const c = await api("/categories", { method: "POST", json: { name: ai.suggest_new.name, group: ai.suggest_new.group, icon: "🏷️" } })
         await loadCategories()
         const first = rows.children[0]
-        const replacement = categorySelect(c.id)
+        const replacement = categorySelect(c.id, saveSplits)
         first._sel.replaceWith(replacement)
         first._sel = replacement
+        saveSplits()
         toast(`Created ${c.name}`, "good")
         create.remove()
       })
@@ -463,7 +512,8 @@ function expenseSections(tx, ctx) {
 
     // ---- Note (optional) ----
     const noteIn = el("textarea", { maxlength: 1000, rows: 2, placeholder: "e.g. Birthday dinner for Ibu; split with Andi" })
-    noteIn.value = tx.note || ""
+    noteIn.value = draft.note ?? tx.note ?? ""
+    noteIn.addEventListener("input", () => setDraft(tx.id, { note: noteIn.value }))
     out.push(el("div", { class: "card" }, el("div", { class: "card-title", text: "Note (optional)" }), noteIn,
       el("p", { class: "hint", text: "Shown in the Inbox and in the monthly report." })))
 
@@ -479,10 +529,11 @@ function expenseSections(tx, ctx) {
       }
       try {
         await api(`/transactions/${tx.id}/confirm`, { method: "POST", json: { splits, waive_reason: waiveReason, note: noteIn.value.trim() } })
+        clearDraft(tx.id)
         ctx.markChanged()
         toast("Confirmed", "good")
         ctx.close()
-      } catch (err) { msg.textContent = err.message }
+      } catch (err) { if (!doneElsewhere(err, tx, ctx)) msg.textContent = err.message }
     })
     out.push(el("div", { class: "sticky-actions" }, msg, confirm))
   }

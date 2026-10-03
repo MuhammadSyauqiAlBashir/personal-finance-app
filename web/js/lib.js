@@ -216,8 +216,11 @@ export function toast(msg, kind = "") {
   toastTimer = setTimeout(() => (t.hidden = true), 2800)
 }
 
-// A bottom sheet built on <dialog>. Returns {dialog, body, close}.
-export function sheet(title, { tall = false, onClose } = {}) {
+// A bottom sheet built on <dialog>. Returns {dialog, body, close}. With a `key`, the same sheet can't be opened twice
+// (a double tap used to stack two copies, so people filled the same transaction in twice): returns null instead.
+export const sheetOpen = (key) => [...document.querySelectorAll("dialog.sheet[open]")].some((d) => d.dataset.key === key)
+export function sheet(title, { tall = false, onClose, key = "" } = {}) {
+  if (key && sheetOpen(key)) return null
   const body = el("div", { class: "sheet-body" })
   const closeBtn = el("button", { class: "icon-btn", type: "button", "aria-label": "Close" }, icon("x"))
   const dialog = el("dialog", { class: `sheet${tall ? " tall" : ""}` },
@@ -227,6 +230,7 @@ export function sheet(title, { tall = false, onClose } = {}) {
   closeBtn.onclick = close
   dialog.addEventListener("click", (e) => { if (e.target === dialog) close() })
   dialog.addEventListener("close", () => { dialog.remove(); onClose && onClose() })
+  if (key) dialog.dataset.key = key
   document.body.append(dialog)
   dialog.setAttribute("tabindex", "-1")
   dialog.showModal()

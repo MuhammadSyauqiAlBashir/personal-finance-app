@@ -94,6 +94,13 @@ detail is missing): `~/work/tx_user.txt` (owner's messages), `~/work/tx_asks.txt
 
 ## History (newest first)
 
+- 2026-10-03 — Inbox fixes (reproduced on the scratch stack first): one sheet per transaction (a double tap or a
+  repeat route stacked two, so people filled the same one twice); unsent wallet lines / note / no-receipt reason kept
+  as a per-device draft (`localStorage` `fin.drafts`) across sheet reloads (photo, Save details) and app restarts;
+  confirming an already-confirmed transaction → 409 "Already confirmed by …" (was silently ignored); per-transaction
+  lock on confirm/close (two phones at once could save wallet lines twice; live data checked: no damage); opening from
+  a notification refreshes the Inbox after confirm; list refreshes in place (keeps scroll). Layout: sheets, + button,
+  toasts and the lock overlay sit on the frame's bottom (`--frame-gap`), sheet top always below the status bar.
 - 2026-10-03 — Docs checked against the live server (all deployed code matched the repo) and corrected: start
   day 28, exact Gmail senders in the runbook, service-only PocketBase rules, 1 Oct changes in DESIGN §11/§12.
   `finance.service` → `Restart=always`. First real transactions since 1 Oct: 28 confirmed (7 are e-wallet/Flazz

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -352,11 +353,27 @@ async def check_bills(tx: dict, splits: list[SplitIn]):
             await pb.create("fin_bill_payments", {"bill": b["id"], "period": tx["period"], "transaction": tx["id"]})
 
 
+# One confirm/close at a time per transaction (single worker): two people, or two open sheets, confirming the same
+# transaction at once could otherwise both pass the status check and save its wallet lines twice.
+_tx_locks: dict[str, asyncio.Lock] = {}
+
+
+def tx_lock(tid: str) -> asyncio.Lock:
+    return _tx_locks.setdefault(tid, asyncio.Lock())
+
+
 @router.post("/transactions/{tid}/confirm")
 async def confirm(tid: str, body: ConfirmIn, background: BackgroundTasks, user: User = Depends(member)):
+    async with tx_lock(rid(tid)):
+        return await _confirm(tid, body, background, user)
+
+
+async def _confirm(tid: str, body: ConfirmIn, background: BackgroundTasks, user: User):
     tx = await pb.get("fin_transactions", rid(tid))
     if tx["status"] == "confirmed":
-        return tx
+        # Say so instead of silently dropping what this person just filled in.
+        who = tx.get("confirmed_by") or "someone"
+        raise HTTPException(409, f"Already confirmed by {'you' if who == user.username else who}.")
     if tx["status"] not in ("pending",):
         raise HTTPException(400, "Only pending transactions can be confirmed.")
     update = {"status": "confirmed", "confirmed_by": user.username, "confirmed_at": now_iso()}
@@ -411,6 +428,11 @@ class CloseTopupIn(BaseModel):
 @router.post("/transactions/{tid}/close")
 async def close_topup(tid: str, body: CloseTopupIn, background: BackgroundTasks, user: User = Depends(member)):
     """Account for a top-up's remaining balance in one category (e.g. small untracked purchases)."""
+    async with tx_lock(rid(tid)):
+        return await _close_topup(tid, body, background, user)
+
+
+async def _close_topup(tid: str, body: CloseTopupIn, background: BackgroundTasks, user: User):
     topup = await pb.get("fin_transactions", rid(tid))
     if topup["kind"] != "topup":
         raise HTTPException(400, "Not a top-up.")
@@ -426,7 +448,7 @@ async def close_topup(tid: str, body: CloseTopupIn, background: BackgroundTasks,
         })
         await pb.create("fin_splits", {"transaction": rest["id"], "category": rid(body.category),
                                        "amount": item["remaining"], "note": ""})
-    return await confirm(tid, ConfirmIn(), background, user)
+    return await _confirm(tid, ConfirmIn(), background, user)
 
 
 @router.post("/transactions/{tid}/unconfirm")

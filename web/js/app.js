@@ -44,7 +44,12 @@ export async function route() {
   try {
     await ROUTES[tab](page, name === "report" ? arg : name === "tx" ? null : arg, arg2)
     if (my !== rendering) return
-    if (name === "tx" && arg) openTransaction(arg)
+    if (name === "tx" && arg) {
+      // Opened from a notification. Leave #inbox in the address so a later re-route doesn't open it a second time,
+      // and refresh the list behind it after a confirm.
+      history.replaceState(null, "", "#inbox")
+      openTransaction(arg, () => renderInbox(page, null, null, { quiet: true }))
+    }
   } catch (err) {
     if (err.status === 401 || err.status === 423 || err.status === 403) return
     page.replaceChildren(el("div", { class: "empty-state" }, el("div", { class: "big", text: "😕" }),
@@ -220,9 +225,16 @@ window.addEventListener("pageshow", fitHeight)
 // after the keyboard closes (that's what lifted the tab bar).
 for (const t of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(t, (e) => e.preventDefault(), { passive: false })
 document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault() }, { passive: false })
-const settle = () => { if (window.scrollY || window.scrollX) window.scrollTo(0, 0) }
-window.visualViewport && window.visualViewport.addEventListener("resize", () => setTimeout(settle, 60))
-document.addEventListener("focusout", () => setTimeout(settle, 120))
+// Not while another field has the focus: then iOS has scrolled on purpose to keep it above the keyboard. Settled
+// twice because the keyboard animates away after the event, and iOS can scroll once more at the end.
+const settle = () => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "")) return
+  if (window.scrollY || window.scrollX) window.scrollTo(0, 0)
+}
+const settleSoon = () => { setTimeout(settle, 60); setTimeout(settle, 450) }
+window.visualViewport && window.visualViewport.addEventListener("resize", settleSoon)
+document.addEventListener("focusout", settleSoon)
+document.addEventListener("close", settleSoon, true) // a sheet closed (dialog "close" doesn't bubble, so capture)
 window.addEventListener("hashchange", settle)
 
 // While someone is actively typing/tapping, tell the server once a minute so a long form doesn't lock mid-way.
