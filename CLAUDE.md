@@ -8,6 +8,11 @@ Read before deeper work: `README.md` (layout, operate, gotchas) and `docs/DESIGN
 data model, flows; §11 changes after the first build). Server-wide facts (VPS, Caddy, PocketBase, security,
 backups) are in `~/.claude/CLAUDE.md`.
 
+Original conversations (everything the owner asked and decided, 2026-09-26 → 10-03, all apps; search them when a
+detail is missing): `~/work/tx_user.txt` (owner's messages), `~/work/tx_asks.txt` (multiple-choice decisions),
+`~/work/tx_assistant.txt` (Claude's longer answers); raw transcript
+`~/.claude/projects/-home-bashir/b434ae8c-ff15-4ca3-aa6d-842e57f5a2aa.jsonl`.
+
 ## Rules for working on this app (owner's instructions)
 
 - **The app is LIVE with real money data (since 2026-10-01). ALWAYS ask Bashir before changing any data** —
@@ -57,6 +62,31 @@ backups) are in `~/.claude/CLAUDE.md`.
 - App frame: no zoom (viewport + gesture blocking), fixed frame using `--app-h` = `screen.height` in standalone
   mode (tab bar on the real bottom edge), Advisor input above the tab bar.
 - Inbox: "Bank details" card + "Whose account?" chips → kv `account_owners` {"BCA:73": username}.
+
+## Owner's original brief (2026-09-26) and extra facts
+
+- Brief: bank emails to one inbox → server parses amounts (rules first, Gemini fallback) → a list to confirm with
+  AI pre-fill → **both** spouses can confirm → a receipt photo must match (else the user picks which value is right)
+  → budget wallets per category incl. "must spend" (rent…) → notifications, daily/monthly reports, forecasts of
+  behaviour, an AI finance advisor; UI/UX as good as lyrsync, **especially the reports**; proof photos to Google Drive.
+- Interview extras: income entered manually; Gemini must choose from the category master list or suggest a new
+  one (a person approves); AI proposes the starting categories; family-background settings enrich the AI; payday
+  was 25th at first, changed to the 1st for the clean start (Sep incomes/plan moved to October, later reset).
+- Gemini models: a Flash-Lite model for emails/receipts/screenshots/categories (highest free allowance), a stronger
+  Flash model for advisor chat and monthly reviews; the key's project has **no billing**, so it can't cost money —
+  never click "Set up billing/Upgrade" in AI Studio (going paid would need the owner's OK + a spending cap).
+- Gmail: the personal inbox forwards only these senders: `bca@bca.co.id OR pasporbca@klikbca.com OR
+  noreply.livin@bankmandiri.co.id` (domain matching would miss BCA debit-card mail from klikbca.com and include
+  Halo BCA complaint mail). Mandiri also sends login/password alerts → skipped; `[TIDAK BERHASIL]` / "Tidak Berhasil"
+  = failed, never counted. Labels `bank` → `processed`; `sample` = parser samples. Setup runbook in `docs/gmail-setup-runbook.md`.
+- Demo data (removed by the owner): 141 made-up Aug/Sep transactions; the feature remains (Settings → Demo data).
+- iPhone push not arriving with the app closed → check Settings → Notifications → Finance (Allow, Lock Screen/
+  Banners, Delivery **Immediate** not Scheduled Summary), Focus/Do Not Disturb, Low Power Mode; then send a test
+  (`~/work/pushtest.py`). Apple's status code is logged for every push.
+- Researched 2026-09-27: paying/transferring **from** the app — not recommended. Bank APIs (SNAP) are business-only;
+  e-wallet APIs are for merchants; licensed disbursement providers (Xendit, Midtrans, DOKU, Flip for Business) need
+  merchant registration + a pre-funded balance and a stolen API key could drain it; never automate internet
+  banking logins. The app keeps recording payments from bank emails instead.
 
 ## History (newest first)
 
